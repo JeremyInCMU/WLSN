@@ -1,0 +1,2788 @@
+   1               		.file	"main.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+  10               		.text
+  11               	.Ltext0:
+ 344               	.global	peer_receiveMessage
+ 346               	peer_receiveMessage:
+ 347               		.stabd	46,0,0
+   1:main.c        **** /**
+   2:main.c        ****   * File: main.c
+   3:main.c        ****   * 18-748: Wireless Sensor Networks
+   4:main.c        ****   * Authors: Lucas Bruder, Jeremy Xiao, and Pallavi Kuman
+   5:main.c        ****   * Team 12
+   6:main.c        ****   * Lab 3: Multi-hop
+   7:main.c        ****   * Last modified: 2/14/2016
+   8:main.c        ****   *
+   9:main.c        ****   * This is code loaded on to peer firefly node for lab 3.
+  10:main.c        ****   *
+  11:main.c        ****   *   TODO:
+  12:main.c        ****   *		  GOT_ACK state needs modification in the case of a mesh network, the first route found might 
+  13:main.c        ****   * 	  * In transition to RTS state, need to clear all the strings and arrays so we don't get same 
+  14:main.c        ****   * 	
+  15:main.c        ****   *		  Notes: Things to think about during routing algorithm:
+  16:main.c        ****   *		         How many times a node has to send TEST before something responds
+  17:main.c        ****   *				 How many hops
+  18:main.c        ****   *
+  19:main.c        ****   *		   TODO fix unexpected restart
+  20:main.c        ****   */
+  21:main.c        **** 
+  22:main.c        **** /*****************************************
+  23:main.c        ****  *                 INCLUDES              *
+  24:main.c        ****  *****************************************/
+  25:main.c        **** 
+  26:main.c        **** #include <nrk.h>
+  27:main.c        **** #include <include.h>
+  28:main.c        **** #include <ulib.h>
+  29:main.c        **** #include <stdio.h>
+  30:main.c        **** #include <stdlib.h>
+  31:main.c        **** #include <avr/sleep.h>
+  32:main.c        **** #include <hal.h>
+  33:main.c        **** #include <bmac.h>
+  34:main.c        **** #include <nrk_error.h>
+  35:main.c        **** #include <nrk_timer.h>
+  36:main.c        **** #include <nrk_driver_list.h>
+  37:main.c        **** #include <nrk_driver.h>
+  38:main.c        **** #include <ff_basic_sensor.h>
+  39:main.c        ****  
+  40:main.c        **** /*****************************************
+  41:main.c        ****  *                 DEFINES               *
+  42:main.c        ****  *****************************************/
+  43:main.c        **** 
+  44:main.c        **** #define MAC_ADDR              (uint16_t)0 // MAC address of gateway node
+  45:main.c        **** #define CHANNEL             		   12 // channel to communicate on
+  46:main.c        **** #define MAX_SECONDS_BUF_LEN  		    4 // maximum number of digits to accept for updated refresh or s
+  47:main.c        **** 
+  48:main.c        **** #define MAX_SECONDS_TEST_STATE_NO_ACK	3 // maximum number of seconds to wait in the TEST state with
+  49:main.c        **** 
+  50:main.c        **** #define MAX_TIMES_SEND_SEEN				3	
+  51:main.c        **** #define MAX_NUM_PEERS	4
+  52:main.c        **** 
+  53:main.c        **** #define MAX_SENDING_ACK_SECS			5
+  54:main.c        **** 
+  55:main.c        **** /*****************************************
+  56:main.c        ****  *                 TYPEDEFS              *
+  57:main.c        ****  *****************************************/
+  58:main.c        **** 
+  59:main.c        ****  typedef enum{
+  60:main.c        **** 
+  61:main.c        ****  	/*
+  62:main.c        ****  	 * All routing related states
+  63:main.c        ****  	 */
+  64:main.c        ****     STATE_WAIT,	// initial turn on state, waiting for route command from gateway
+  65:main.c        ****     STATE_RTS,	// sending out RTS messages, waiting for CTS from gateway
+  66:main.c        ****     STATE_TEST, // received CTS command for this node, sending out test messages and waiting for ne
+  67:main.c        ****     STATE_LISTENING, // received CTS command but not this node, start listening for test messages. 
+  68:main.c        ****     STATE_SENDING_ACKS, // received test message, start sending out ACK:<my mac>
+  69:main.c        ****     STATE_GOT_ACK, // got acknowledged by another peer with SEEN message, wait for CTS from gateway
+  70:main.c        ****     STATE_DONE, // node didn't receive an ACK from another node for certain period of time, now tra
+  71:main.c        ****     STATE_FORWARDING, // waiting for DONE messages from other nodes with information to forward to 
+  72:main.c        **** 
+  73:main.c        ****  } peer_state_E;
+  74:main.c        **** 
+  75:main.c        ****  typedef struct{
+  76:main.c        ****     peer_state_E desiredState;
+  77:main.c        ****     peer_state_E presentState;;
+  78:main.c        ****     bool stateTransition;
+  79:main.c        **** 
+  80:main.c        ****     uint16_t networkRefreshPeriod;
+  81:main.c        ****     uint16_t sensorUpdatePeriod;
+  82:main.c        **** 
+  83:main.c        ****     uint8_t *receive_buf;
+  84:main.c        ****     uint8_t tx_buf[RF_MAX_PAYLOAD_SIZE];
+  85:main.c        ****     uint8_t len;
+  86:main.c        ****     int8_t rssi;
+  87:main.c        **** 
+  88:main.c        ****     nrk_time_t currentTime;
+  89:main.c        ****     nrk_time_t transitionTime;
+  90:main.c        ****     nrk_time_t testStateLastReceivedAckMessage;
+  91:main.c        **** 
+  92:main.c        ****     bool receivedTestMessage;
+  93:main.c        ****     bool receivedSeenMessage;
+  94:main.c        ****     bool receivedCtsFromGateway;
+  95:main.c        ****     bool receivedAckFromGateway;
+  96:main.c        ****     bool sendSeen;
+  97:main.c        ****     uint8_t sendSeenCount;
+  98:main.c        **** 
+  99:main.c        ****     char done_message[RF_MAX_PAYLOAD_SIZE];
+ 100:main.c        **** 
+ 101:main.c        ****     uint8_t nodesSeen[MAX_NUM_PEERS];
+ 102:main.c        **** 
+ 103:main.c        ****  } peer_data_S;
+ 104:main.c        **** 
+ 105:main.c        **** /*****************************************
+ 106:main.c        ****  *             FUNCTION HEADERS          *
+ 107:main.c        ****  *****************************************/
+ 108:main.c        **** 
+ 109:main.c        **** void peer_task(void);
+ 110:main.c        **** void nrk_create_taskset(void);
+ 111:main.c        **** void nrk_register_drivers();
+ 112:main.c        **** 
+ 113:main.c        **** void peer_init(void);
+ 114:main.c        **** 
+ 115:main.c        **** // Send and receive functions for wireless communication
+ 116:main.c        **** bool peer_receiveMessage(void);
+ 117:main.c        **** bool peer_sendMessage(void);
+ 118:main.c        **** 
+ 119:main.c        **** // State machine processing
+ 120:main.c        **** void peer_processData(void);
+ 121:main.c        **** void peer_getDesiredState(void);
+ 122:main.c        **** void peer_setCurrentState(void);
+ 123:main.c        **** 
+ 124:main.c        **** /*
+ 125:main.c        **** 
+ 126:main.c        ****  * State machine transitions
+ 127:main.c        ****  */
+ 128:main.c        **** 
+ 129:main.c        **** 
+ 130:main.c        **** /*****************************************
+ 131:main.c        ****  *              VARIABLES                *
+ 132:main.c        ****  *****************************************/
+ 133:main.c        **** 
+ 134:main.c        **** /*
+ 135:main.c        ****  * Gateway task
+ 136:main.c        ****  */
+ 137:main.c        **** nrk_task_type PEER_TASK;
+ 138:main.c        **** NRK_STK peer_task_stack[NRK_APP_STACKSIZE];
+ 139:main.c        **** uint8_t peer_buf[RF_MAX_PAYLOAD_SIZE];
+ 140:main.c        **** 
+ 141:main.c        **** // RX and TX buffers
+ 142:main.c        **** uint8_t rx_buf[RF_MAX_PAYLOAD_SIZE];
+ 143:main.c        **** nrk_time_t start_time_receive;
+ 144:main.c        **** nrk_time_t end_time_receive;
+ 145:main.c        **** bool receivedMessage;
+ 146:main.c        **** 
+ 147:main.c        **** nrk_sig_t uart_rx_signal;
+ 148:main.c        **** 
+ 149:main.c        **** peer_data_S peer_data;
+ 150:main.c        **** 
+ 151:main.c        **** static const char* ROUTE_STRING = "GTW:ROUTE";
+ 152:main.c        **** 
+ 153:main.c        **** /*****************************************
+ 154:main.c        ****  *          HELPER FUNCTIONS             *
+ 155:main.c        ****  *****************************************/
+ 156:main.c        **** 
+ 157:main.c        **** /**
+ 158:main.c        ****   *
+ 159:main.c        ****   * Receives a message and puts it into local_buf.
+ 160:main.c        ****   *
+ 161:main.c        ****   * @return true if received a message, false otherwise
+ 162:main.c        ****   *
+ 163:main.c        ****   */
+ 164:main.c        **** bool peer_receiveMessage(void)
+ 165:main.c        **** {
+ 349               	.LM0:
+ 350               	.LFBB1:
+ 351 0000 4F92      		push r4
+ 352 0002 5F92      		push r5
+ 353 0004 6F92      		push r6
+ 354 0006 7F92      		push r7
+ 355 0008 8F92      		push r8
+ 356 000a 9F92      		push r9
+ 357 000c AF92      		push r10
+ 358 000e BF92      		push r11
+ 359 0010 CF92      		push r12
+ 360 0012 DF92      		push r13
+ 361 0014 EF92      		push r14
+ 362 0016 FF92      		push r15
+ 363               	/* prologue: function */
+ 364               	/* frame size = 0 */
+ 365               	/* stack size = 12 */
+ 366               	.L__stack_usage = 12
+ 367               	.L7:
+ 166:main.c        ****     bool received = false;
+ 167:main.c        ****     /*
+ 168:main.c        ****      *  Code takes care of receiving and sets timeout = true if there's a timeout receiving a packe
+ 169:main.c        ****      */
+ 170:main.c        ****     while(1)
+ 171:main.c        ****     {
+ 172:main.c        ****         if(bmac_rx_pkt_ready())
+ 369               	.LM1:
+ 370 0018 0E94 0000 		call bmac_rx_pkt_ready
+ 371 001c 8823      		tst r24
+ 372 001e 01F0      		breq .L2
+ 373               	.LBB6:
+ 374               	.LBB7:
+ 173:main.c        ****         {
+ 174:main.c        ****             peer_data.receive_buf = bmac_rx_pkt_get (&(peer_data.len), &(peer_data.rssi));
+ 376               	.LM2:
+ 377 0020 60E0      		ldi r22,lo8(peer_data+126)
+ 378 0022 70E0      		ldi r23,hi8(peer_data+126)
+ 379 0024 80E0      		ldi r24,lo8(peer_data+125)
+ 380 0026 90E0      		ldi r25,hi8(peer_data+125)
+ 381 0028 0E94 0000 		call bmac_rx_pkt_get
+ 382 002c 9093 0000 		sts peer_data+7+1,r25
+ 383 0030 8093 0000 		sts peer_data+7,r24
+ 175:main.c        ****             received = true;
+ 176:main.c        ****             // printf ("Got RX packet len=%d RSSI=%d [", len, rssi);
+ 177:main.c        ****             // for (i = 0; i < len; i++)
+ 178:main.c        ****             // {
+ 179:main.c        ****             //     // printf ("%c", local_buf[i]);
+ 180:main.c        ****             //     // printf ("]\r\n");
+ 181:main.c        ****             // }
+ 182:main.c        ****             
+ 183:main.c        ****             // Release the RX buffer so future packets can arrive
+ 184:main.c        ****             bmac_rx_pkt_release ();
+ 385               	.LM3:
+ 386 0034 0E94 0000 		call bmac_rx_pkt_release
+ 387 0038 81E0      		ldi r24,lo8(1)
+ 388 003a 00C0      		rjmp .L3
+ 389               	.L2:
+ 390               	.LBE7:
+ 391               	.LBE6:
+ 185:main.c        ****             break;
+ 186:main.c        ****         }
+ 187:main.c        ****         
+ 188:main.c        ****         // Implement timeouts
+ 189:main.c        ****         nrk_time_get(&end_time_receive);
+ 393               	.LM4:
+ 394 003c 80E0      		ldi r24,lo8(end_time_receive)
+ 395 003e 90E0      		ldi r25,hi8(end_time_receive)
+ 396 0040 0E94 0000 		call nrk_time_get
+ 190:main.c        ****         if(end_time_receive.nano_secs > start_time_receive.nano_secs)
+ 398               	.LM5:
+ 399 0044 8090 0000 		lds r8,end_time_receive+4
+ 400 0048 9090 0000 		lds r9,end_time_receive+4+1
+ 401 004c A090 0000 		lds r10,end_time_receive+4+2
+ 402 0050 B090 0000 		lds r11,end_time_receive+4+3
+ 403 0054 C090 0000 		lds r12,start_time_receive+4
+ 404 0058 D090 0000 		lds r13,start_time_receive+4+1
+ 405 005c E090 0000 		lds r14,start_time_receive+4+2
+ 406 0060 F090 0000 		lds r15,start_time_receive+4+3
+ 191:main.c        ****         {
+ 192:main.c        ****             if(((end_time_receive.secs-start_time_receive.secs)*1000+(end_time_receive.nano_secs-st
+ 408               	.LM6:
+ 409 0064 4091 0000 		lds r20,end_time_receive
+ 410 0068 5091 0000 		lds r21,end_time_receive+1
+ 411 006c 6091 0000 		lds r22,end_time_receive+2
+ 412 0070 7091 0000 		lds r23,end_time_receive+3
+ 413 0074 8091 0000 		lds r24,start_time_receive
+ 414 0078 9091 0000 		lds r25,start_time_receive+1
+ 415 007c A091 0000 		lds r26,start_time_receive+2
+ 416 0080 B091 0000 		lds r27,start_time_receive+3
+ 417 0084 9A01      		movw r18,r20
+ 418 0086 AB01      		movw r20,r22
+ 419 0088 281B      		sub r18,r24
+ 420 008a 390B      		sbc r19,r25
+ 421 008c 4A0B      		sbc r20,r26
+ 422 008e 5B0B      		sbc r21,r27
+ 423 0090 A8EE      		ldi r26,lo8(-24)
+ 424 0092 B3E0      		ldi r27,lo8(3)
+ 425 0094 0E94 0000 		call __muluhisi3
+ 426 0098 2B01      		movw r4,r22
+ 427 009a 3C01      		movw r6,r24
+ 190:main.c        ****         if(end_time_receive.nano_secs > start_time_receive.nano_secs)
+ 429               	.LM7:
+ 430 009c C814      		cp r12,r8
+ 431 009e D904      		cpc r13,r9
+ 432 00a0 EA04      		cpc r14,r10
+ 433 00a2 FB04      		cpc r15,r11
+ 434 00a4 00F4      		brsh .L4
+ 436               	.LM8:
+ 437 00a6 C501      		movw r24,r10
+ 438 00a8 B401      		movw r22,r8
+ 439 00aa 6C19      		sub r22,r12
+ 440 00ac 7D09      		sbc r23,r13
+ 441 00ae 8E09      		sbc r24,r14
+ 442 00b0 9F09      		sbc r25,r15
+ 443 00b2 20E4      		ldi r18,lo8(64)
+ 444 00b4 32E4      		ldi r19,lo8(66)
+ 445 00b6 4FE0      		ldi r20,lo8(15)
+ 446 00b8 50E0      		ldi r21,0
+ 447 00ba 0E94 0000 		call __udivmodsi4
+ 448 00be D301      		movw r26,r6
+ 449 00c0 C201      		movw r24,r4
+ 450 00c2 820F      		add r24,r18
+ 451 00c4 931F      		adc r25,r19
+ 452 00c6 A41F      		adc r26,r20
+ 453 00c8 B51F      		adc r27,r21
+ 454 00ca 893E      		cpi r24,-23
+ 455 00cc 9340      		sbci r25,3
+ 456 00ce A105      		cpc r26,__zero_reg__
+ 457 00d0 B105      		cpc r27,__zero_reg__
+ 458 00d2 00F4      		brsh .+2
+ 459 00d4 00C0      		rjmp .L7
+ 460 00d6 00C0      		rjmp .L6
+ 461               	.L4:
+ 193:main.c        ****             {
+ 194:main.c        ****                 received = false;
+ 195:main.c        ****                 break;
+ 196:main.c        ****             }
+ 197:main.c        ****         }
+ 198:main.c        ****         else
+ 199:main.c        ****         {
+ 200:main.c        ****             if(((end_time_receive.secs-start_time_receive.secs)*1000-(start_time_receive.nano_secs-
+ 463               	.LM9:
+ 464 00d8 C701      		movw r24,r14
+ 465 00da B601      		movw r22,r12
+ 466 00dc 6819      		sub r22,r8
+ 467 00de 7909      		sbc r23,r9
+ 468 00e0 8A09      		sbc r24,r10
+ 469 00e2 9B09      		sbc r25,r11
+ 470 00e4 20E4      		ldi r18,lo8(64)
+ 471 00e6 32E4      		ldi r19,lo8(66)
+ 472 00e8 4FE0      		ldi r20,lo8(15)
+ 473 00ea 50E0      		ldi r21,0
+ 474 00ec 0E94 0000 		call __udivmodsi4
+ 475 00f0 421A      		sub r4,r18
+ 476 00f2 530A      		sbc r5,r19
+ 477 00f4 640A      		sbc r6,r20
+ 478 00f6 750A      		sbc r7,r21
+ 479 00f8 89EE      		ldi r24,-23
+ 480 00fa 4816      		cp r4,r24
+ 481 00fc 83E0      		ldi r24,3
+ 482 00fe 5806      		cpc r5,r24
+ 483 0100 6104      		cpc r6,__zero_reg__
+ 484 0102 7104      		cpc r7,__zero_reg__
+ 485 0104 00F4      		brsh .+2
+ 486 0106 00C0      		rjmp .L7
+ 487               	.L6:
+ 194:main.c        ****                 break;
+ 489               	.LM10:
+ 490 0108 80E0      		ldi r24,0
+ 491               	.L3:
+ 492               	/* epilogue start */
+ 201:main.c        ****             {
+ 202:main.c        ****                 received = false;
+ 203:main.c        ****                 break;
+ 204:main.c        ****             }
+ 205:main.c        ****         }
+ 206:main.c        ****     }
+ 207:main.c        **** 
+ 208:main.c        ****     return received;
+ 209:main.c        **** }
+ 494               	.LM11:
+ 495 010a FF90      		pop r15
+ 496 010c EF90      		pop r14
+ 497 010e DF90      		pop r13
+ 498 0110 CF90      		pop r12
+ 499 0112 BF90      		pop r11
+ 500 0114 AF90      		pop r10
+ 501 0116 9F90      		pop r9
+ 502 0118 8F90      		pop r8
+ 503 011a 7F90      		pop r7
+ 504 011c 6F90      		pop r6
+ 505 011e 5F90      		pop r5
+ 506 0120 4F90      		pop r4
+ 507 0122 0895      		ret
+ 512               	.Lscope1:
+ 514               		.stabd	78,0,0
+ 516               	.global	peer_sendMessage
+ 518               	peer_sendMessage:
+ 519               		.stabd	46,0,0
+ 210:main.c        **** 
+ 211:main.c        **** /**
+ 212:main.c        ****   * Sends a message placed in the tx_buf
+ 213:main.c        ****   */
+ 214:main.c        **** bool peer_sendMessage(void)
+ 215:main.c        **** {
+ 521               	.LM12:
+ 522               	.LFBB2:
+ 523 0124 CF93      		push r28
+ 524               	/* prologue: function */
+ 525               	/* frame size = 0 */
+ 526               	/* stack size = 1 */
+ 527               	.L__stack_usage = 1
+ 216:main.c        ****     int8_t val;
+ 217:main.c        ****     bool sent = true;
+ 218:main.c        **** 
+ 219:main.c        ****     val=bmac_tx_pkt(peer_data.tx_buf, strlen(peer_data.tx_buf)+1);
+ 529               	.LM13:
+ 530 0126 E0E0      		ldi r30,lo8(peer_data+9)
+ 531 0128 F0E0      		ldi r31,hi8(peer_data+9)
+ 532               		0:
+ 533 012a 0190      		ld __tmp_reg__,Z+
+ 534 012c 0020      		tst __tmp_reg__
+ 535 012e 01F4      		brne 0b
+ 536 0130 BF01      		movw r22,r30
+ 537 0132 6050      		subi r22,lo8(peer_data+10)
+ 538 0134 7040      		sbci r23,hi8(peer_data+10)
+ 539 0136 6F5F      		subi r22,lo8(-(1))
+ 540 0138 80E0      		ldi r24,lo8(peer_data+9)
+ 541 013a 90E0      		ldi r25,hi8(peer_data+9)
+ 542 013c 0E94 0000 		call bmac_tx_pkt
+ 220:main.c        **** 
+ 221:main.c        ****     if(val != NRK_OK)
+ 544               	.LM14:
+ 545 0140 8130      		cpi r24,lo8(1)
+ 546 0142 01F0      		breq .L10
+ 222:main.c        ****     {
+ 223:main.c        ****         nrk_kprintf(PSTR("Could not Transmit!\r\n"));
+ 548               	.LM15:
+ 549 0144 80E0      		ldi r24,lo8(__c.3741)
+ 550 0146 90E0      		ldi r25,hi8(__c.3741)
+ 551 0148 0E94 0000 		call nrk_kprintf
+ 224:main.c        ****         sent = false;
+ 225:main.c        ****         nrk_led_set(RED_LED);
+ 553               	.LM16:
+ 554 014c 80E0      		ldi r24,0
+ 555 014e 90E0      		ldi r25,0
+ 556 0150 0E94 0000 		call nrk_led_set
+ 224:main.c        ****         sent = false;
+ 558               	.LM17:
+ 559 0154 C0E0      		ldi r28,0
+ 560 0156 00C0      		rjmp .L11
+ 561               	.L10:
+ 226:main.c        ****     }
+ 227:main.c        ****     else
+ 228:main.c        ****     {
+ 229:main.c        ****     	nrk_led_clr(RED_LED);
+ 563               	.LM18:
+ 564 0158 80E0      		ldi r24,0
+ 565 015a 90E0      		ldi r25,0
+ 566 015c 0E94 0000 		call nrk_led_clr
+ 217:main.c        **** 
+ 568               	.LM19:
+ 569 0160 C1E0      		ldi r28,lo8(1)
+ 570               	.L11:
+ 230:main.c        ****     }
+ 231:main.c        **** 
+ 232:main.c        ****     nrk_time_get(&start_time_receive);
+ 572               	.LM20:
+ 573 0162 80E0      		ldi r24,lo8(start_time_receive)
+ 574 0164 90E0      		ldi r25,hi8(start_time_receive)
+ 575 0166 0E94 0000 		call nrk_time_get
+ 233:main.c        **** 
+ 234:main.c        ****     return sent;
+ 235:main.c        **** }
+ 577               	.LM21:
+ 578 016a 8C2F      		mov r24,r28
+ 579               	/* epilogue start */
+ 580 016c CF91      		pop r28
+ 581 016e 0895      		ret
+ 586               	.Lscope2:
+ 588               		.stabd	78,0,0
+ 589               		.section	.rodata.str1.1,"aMS",@progbits,1
+ 590               	.LC0:
+ 591 0000 4754 573A 		.string	"GTW:ROUTE"
+ 591      524F 5554 
+ 591      4500 
+ 592               		.text
+ 594               	.global	peer_allowTransitionWaitToRTS
+ 596               	peer_allowTransitionWaitToRTS:
+ 597               		.stabd	46,0,0
+ 236:main.c        **** 
+ 237:main.c        **** /**
+ 238:main.c        ****   * Allow transition from waiting to sending RTS if we receive a route command from the 
+ 239:main.c        ****   * gateway
+ 240:main.c        ****   * @return true if transition is allowed, false otherwise
+ 241:main.c        ****   */
+ 242:main.c        **** inline bool peer_allowTransitionWaitToRTS(void)
+ 243:main.c        **** {
+ 599               	.LM22:
+ 600               	.LFBB3:
+ 601               	/* prologue: function */
+ 602               	/* frame size = 0 */
+ 603               	/* stack size = 0 */
+ 604               	.L__stack_usage = 0
+ 244:main.c        **** 	bool allowTransition = false;
+ 245:main.c        **** 
+ 246:main.c        **** 	if((receivedMessage == true) && (strcmp(ROUTE_STRING, peer_data.receive_buf) == 0))
+ 606               	.LM23:
+ 607 0170 8091 0000 		lds r24,receivedMessage
+ 608 0174 8823      		tst r24
+ 609 0176 01F0      		breq .L15
+ 610               	.LBB10:
+ 611               	.LBB11:
+ 612 0178 6091 0000 		lds r22,peer_data+7
+ 613 017c 7091 0000 		lds r23,peer_data+7+1
+ 614 0180 80E0      		ldi r24,lo8(.LC0)
+ 615 0182 90E0      		ldi r25,hi8(.LC0)
+ 616 0184 0E94 0000 		call strcmp
+ 617 0188 21E0      		ldi r18,lo8(1)
+ 618 018a 892B      		or r24,r25
+ 619 018c 01F0      		breq .L13
+ 620               	.L15:
+ 621               	.LBE11:
+ 622               	.LBE10:
+ 244:main.c        **** 	bool allowTransition = false;
+ 624               	.LM24:
+ 625 018e 20E0      		ldi r18,0
+ 626               	.L13:
+ 247:main.c        **** 	{
+ 248:main.c        **** 		allowTransition = true;
+ 249:main.c        **** 	}
+ 250:main.c        **** 
+ 251:main.c        **** 	return allowTransition;
+ 252:main.c        **** }
+ 628               	.LM25:
+ 629 0190 822F      		mov r24,r18
+ 630 0192 0895      		ret
+ 635               	.Lscope3:
+ 637               		.stabd	78,0,0
+ 639               	.global	peer_allowTransitionRTSToTest
+ 641               	peer_allowTransitionRTSToTest:
+ 642               		.stabd	46,0,0
+ 253:main.c        **** 
+ 254:main.c        **** /**
+ 255:main.c        ****   * Allow transition from sending RTS to sending out TEST messages if we get a CTS:<my MAC>
+ 256:main.c        ****   * from the Gateway
+ 257:main.c        ****   */
+ 258:main.c        **** inline bool peer_allowTransitionRTSToTest(void)
+ 259:main.c        **** {
+ 644               	.LM26:
+ 645               	.LFBB4:
+ 646               	/* prologue: function */
+ 647               	/* frame size = 0 */
+ 648               	/* stack size = 0 */
+ 649               	.L__stack_usage = 0
+ 260:main.c        **** 	bool allowTransition = false;
+ 261:main.c        **** 	uint16_t peerId = 0;
+ 262:main.c        **** 
+ 263:main.c        **** 	if(receivedMessage == true)
+ 651               	.LM27:
+ 652 0194 8091 0000 		lds r24,receivedMessage
+ 653 0198 8823      		tst r24
+ 654 019a 01F0      		breq .L27
+ 655               	.LBB16:
+ 656               	.LBB17:
+ 657               	.LBB18:
+ 264:main.c        **** 	{
+ 265:main.c        **** 		char *buf = (char*)peer_data.receive_buf;
+ 659               	.LM28:
+ 660 019c E091 0000 		lds r30,peer_data+7
+ 661 01a0 F091 0000 		lds r31,peer_data+7+1
+ 266:main.c        **** 
+ 267:main.c        **** 		// retreive peer id from Gateway command to see if it's this node's MAC
+ 268:main.c        **** 		if(peer_data.len > 4 && buf[0] == 'C' && buf[1] == 'T' && buf[2] == 'S' && buf[3] == ':')
+ 663               	.LM29:
+ 664 01a4 8091 0000 		lds r24,peer_data+125
+ 665 01a8 8530      		cpi r24,lo8(5)
+ 666 01aa 00F0      		brlo .L27
+ 667 01ac 8081      		ld r24,Z
+ 668 01ae 8334      		cpi r24,lo8(67)
+ 669 01b0 01F4      		brne .L27
+ 670 01b2 8181      		ldd r24,Z+1
+ 671 01b4 8435      		cpi r24,lo8(84)
+ 672 01b6 01F4      		brne .L27
+ 673 01b8 8281      		ldd r24,Z+2
+ 674 01ba 8335      		cpi r24,lo8(83)
+ 675 01bc 01F4      		brne .L27
+ 676 01be 8381      		ldd r24,Z+3
+ 677 01c0 8A33      		cpi r24,lo8(58)
+ 678 01c2 01F4      		brne .L27
+ 269:main.c        **** 		{
+ 270:main.c        **** 			buf = buf + 4;
+ 271:main.c        **** 			peerId = atoi(buf);
+ 680               	.LM30:
+ 681 01c4 CF01      		movw r24,r30
+ 682 01c6 0496      		adiw r24,4
+ 683 01c8 0E94 0000 		call atoi
+ 272:main.c        **** 
+ 273:main.c        **** 			if(peerId == MAC_ADDR)
+ 685               	.LM31:
+ 686 01cc 21E0      		ldi r18,lo8(1)
+ 687 01ce 892B      		or r24,r25
+ 688 01d0 01F0      		breq .L20
+ 689               	.L27:
+ 690               	.LBE18:
+ 691               	.LBE17:
+ 692               	.LBE16:
+ 260:main.c        **** 	uint16_t peerId = 0;
+ 694               	.LM32:
+ 695 01d2 20E0      		ldi r18,0
+ 696               	.L20:
+ 274:main.c        **** 			{
+ 275:main.c        **** 				allowTransition = true;
+ 276:main.c        **** 			}
+ 277:main.c        **** 		}
+ 278:main.c        **** 	}
+ 279:main.c        **** 
+ 280:main.c        **** 	return allowTransition;
+ 281:main.c        **** }
+ 698               	.LM33:
+ 699 01d4 822F      		mov r24,r18
+ 700 01d6 0895      		ret
+ 705               	.Lscope4:
+ 707               		.stabd	78,0,0
+ 709               	.global	peer_allowTransitionRTSToListening
+ 711               	peer_allowTransitionRTSToListening:
+ 712               		.stabd	46,0,0
+ 282:main.c        **** 
+ 283:main.c        **** /**
+ 284:main.c        ****   * Allow transition from sending RTS to listening for TEST messages if we get a CTS:<not my MAC> f
+ 285:main.c        ****   * Gateway
+ 286:main.c        ****   */
+ 287:main.c        **** inline bool peer_allowTransitionRTSToListening(void)
+ 288:main.c        **** {
+ 714               	.LM34:
+ 715               	.LFBB5:
+ 716               	/* prologue: function */
+ 717               	/* frame size = 0 */
+ 718               	/* stack size = 0 */
+ 719               	.L__stack_usage = 0
+ 289:main.c        **** 	bool allowTransition = false;
+ 290:main.c        **** 	uint16_t peerId = 0;
+ 291:main.c        **** 
+ 292:main.c        **** 	if(receivedMessage == true)
+ 721               	.LM35:
+ 722 01d8 8091 0000 		lds r24,receivedMessage
+ 723 01dc 8823      		tst r24
+ 724 01de 01F0      		breq .L39
+ 725               	.LBB23:
+ 726               	.LBB24:
+ 727               	.LBB25:
+ 293:main.c        **** 	{
+ 294:main.c        **** 		char *buf = (char*)peer_data.receive_buf;
+ 729               	.LM36:
+ 730 01e0 E091 0000 		lds r30,peer_data+7
+ 731 01e4 F091 0000 		lds r31,peer_data+7+1
+ 295:main.c        **** 
+ 296:main.c        **** 		// retreive peer id from Gateway command to see if it's this node's MAC
+ 297:main.c        **** 		if(peer_data.len > 4 && buf[0] == 'C' && buf[1] == 'T' && buf[2] == 'S' && buf[3] == ':')
+ 733               	.LM37:
+ 734 01e8 8091 0000 		lds r24,peer_data+125
+ 735 01ec 8530      		cpi r24,lo8(5)
+ 736 01ee 00F0      		brlo .L39
+ 737 01f0 8081      		ld r24,Z
+ 738 01f2 8334      		cpi r24,lo8(67)
+ 739 01f4 01F4      		brne .L39
+ 740 01f6 8181      		ldd r24,Z+1
+ 741 01f8 8435      		cpi r24,lo8(84)
+ 742 01fa 01F4      		brne .L39
+ 743 01fc 8281      		ldd r24,Z+2
+ 744 01fe 8335      		cpi r24,lo8(83)
+ 745 0200 01F4      		brne .L39
+ 746 0202 8381      		ldd r24,Z+3
+ 747 0204 8A33      		cpi r24,lo8(58)
+ 748 0206 01F4      		brne .L39
+ 298:main.c        **** 		{
+ 299:main.c        **** 			buf = buf + 4;
+ 300:main.c        **** 			peerId = atoi((char*)buf);
+ 750               	.LM38:
+ 751 0208 CF01      		movw r24,r30
+ 752 020a 0496      		adiw r24,4
+ 753 020c 0E94 0000 		call atoi
+ 301:main.c        **** 
+ 302:main.c        **** 			if(peerId != MAC_ADDR)
+ 755               	.LM39:
+ 756 0210 21E0      		ldi r18,lo8(1)
+ 757 0212 892B      		or r24,r25
+ 758 0214 01F4      		brne .L32
+ 759               	.L39:
+ 760               	.LBE25:
+ 761               	.LBE24:
+ 762               	.LBE23:
+ 289:main.c        **** 	uint16_t peerId = 0;
+ 764               	.LM40:
+ 765 0216 20E0      		ldi r18,0
+ 766               	.L32:
+ 303:main.c        **** 			{
+ 304:main.c        **** 				allowTransition = true;
+ 305:main.c        **** 			}
+ 306:main.c        **** 		}
+ 307:main.c        **** 	}
+ 308:main.c        **** 
+ 309:main.c        **** 	return allowTransition;
+ 310:main.c        **** }
+ 768               	.LM41:
+ 769 0218 822F      		mov r24,r18
+ 770 021a 0895      		ret
+ 775               	.Lscope5:
+ 777               		.stabd	78,0,0
+ 779               	.global	peer_allowTransitionTestToDone
+ 781               	peer_allowTransitionTestToDone:
+ 782               		.stabd	46,0,0
+ 311:main.c        **** 
+ 312:main.c        **** /**
+ 313:main.c        ****   * Allow transition from sending out TEST messages to DONE state if a certain amount of time has p
+ 314:main.c        ****   * where this node hasn't received an ACK message from another node
+ 315:main.c        ****   */
+ 316:main.c        **** inline bool peer_allowTransitionTestToDone(void)
+ 317:main.c        **** {
+ 784               	.LM42:
+ 785               	.LFBB6:
+ 786               	/* prologue: function */
+ 787               	/* frame size = 0 */
+ 788               	/* stack size = 0 */
+ 789               	.L__stack_usage = 0
+ 318:main.c        **** 	bool allowTransition = false;
+ 319:main.c        **** 
+ 320:main.c        **** 	nrk_time_get(&(peer_data.currentTime));
+ 791               	.LM43:
+ 792 021c 80E0      		ldi r24,lo8(peer_data+127)
+ 793 021e 90E0      		ldi r25,hi8(peer_data+127)
+ 794 0220 0E94 0000 		call nrk_time_get
+ 321:main.c        **** 
+ 322:main.c        **** 	if((peer_data.currentTime.secs - peer_data.testStateLastReceivedAckMessage.secs) > MAX_SECONDS_TES
+ 796               	.LM44:
+ 797 0224 4091 0000 		lds r20,peer_data+127
+ 798 0228 5091 0000 		lds r21,peer_data+127+1
+ 799 022c 6091 0000 		lds r22,peer_data+127+2
+ 800 0230 7091 0000 		lds r23,peer_data+127+3
+ 801 0234 8091 0000 		lds r24,peer_data+143
+ 802 0238 9091 0000 		lds r25,peer_data+143+1
+ 803 023c A091 0000 		lds r26,peer_data+143+2
+ 804 0240 B091 0000 		lds r27,peer_data+143+3
+ 805 0244 481B      		sub r20,r24
+ 806 0246 590B      		sbc r21,r25
+ 807 0248 6A0B      		sbc r22,r26
+ 808 024a 7B0B      		sbc r23,r27
+ 809 024c 81E0      		ldi r24,lo8(1)
+ 810 024e 4430      		cpi r20,4
+ 811 0250 5105      		cpc r21,__zero_reg__
+ 812 0252 6105      		cpc r22,__zero_reg__
+ 813 0254 7105      		cpc r23,__zero_reg__
+ 814 0256 00F4      		brsh .L41
+ 815 0258 80E0      		ldi r24,0
+ 816               	.L41:
+ 323:main.c        **** 	{
+ 324:main.c        **** 		allowTransition = true;
+ 325:main.c        **** 	}
+ 326:main.c        **** 
+ 327:main.c        **** 	return allowTransition;
+ 328:main.c        **** }
+ 818               	.LM45:
+ 819 025a 0895      		ret
+ 821               	.Lscope6:
+ 823               		.stabd	78,0,0
+ 825               	.global	peer_allowTransitionListeningToSendingAcks
+ 827               	peer_allowTransitionListeningToSendingAcks:
+ 828               		.stabd	46,0,0
+ 329:main.c        **** 
+ 330:main.c        **** /**
+ 331:main.c        ****   * Allow transition from the listening state to sending acknowledgement messages if we receive a t
+ 332:main.c        ****   * message from another peer 
+ 333:main.c        ****   */
+ 334:main.c        **** inline bool peer_allowTransitionListeningToSendingAcks(void)
+ 335:main.c        **** {
+ 830               	.LM46:
+ 831               	.LFBB7:
+ 832               	/* prologue: function */
+ 833               	/* frame size = 0 */
+ 834               	/* stack size = 0 */
+ 835               	.L__stack_usage = 0
+ 336:main.c        **** 	bool allowTransition = false;
+ 337:main.c        **** 
+ 338:main.c        **** 	if(peer_data.receivedTestMessage == true)
+ 837               	.LM47:
+ 838 025c 8091 0000 		lds r24,peer_data+151
+ 839 0260 8823      		tst r24
+ 840 0262 01F0      		breq .L44
+ 339:main.c        **** 	{
+ 340:main.c        **** 		allowTransition = true;
+ 341:main.c        **** 		peer_data.receivedTestMessage = false;
+ 842               	.LM48:
+ 843 0264 1092 0000 		sts peer_data+151,__zero_reg__
+ 340:main.c        **** 		peer_data.receivedTestMessage = false;
+ 845               	.LM49:
+ 846 0268 81E0      		ldi r24,lo8(1)
+ 847 026a 0895      		ret
+ 848               	.L44:
+ 336:main.c        **** 	bool allowTransition = false;
+ 850               	.LM50:
+ 851 026c 80E0      		ldi r24,0
+ 342:main.c        **** 	}
+ 343:main.c        **** 
+ 344:main.c        **** 	return allowTransition;
+ 345:main.c        **** }
+ 853               	.LM51:
+ 854 026e 0895      		ret
+ 859               	.Lscope7:
+ 861               		.stabd	78,0,0
+ 863               	.global	peer_allowTransitionSendingAcksToGotAck
+ 865               	peer_allowTransitionSendingAcksToGotAck:
+ 866               		.stabd	46,0,0
+ 346:main.c        **** 
+ 347:main.c        **** /**
+ 348:main.c        ****   * Allow transition from sending acknowledgements to getting an acknoledgement if 
+ 349:main.c        ****   * the current peer transmitting sends us the SEEN:<my MAC>
+ 350:main.c        ****   */
+ 351:main.c        **** inline bool peer_allowTransitionSendingAcksToGotAck(void)
+ 352:main.c        **** {
+ 868               	.LM52:
+ 869               	.LFBB8:
+ 870               	/* prologue: function */
+ 871               	/* frame size = 0 */
+ 872               	/* stack size = 0 */
+ 873               	.L__stack_usage = 0
+ 353:main.c        **** 	bool allowTransition = false;
+ 354:main.c        **** 
+ 355:main.c        **** 	nrk_time_get(&(peer_data.currentTime));
+ 875               	.LM53:
+ 876 0270 80E0      		ldi r24,lo8(peer_data+127)
+ 877 0272 90E0      		ldi r25,hi8(peer_data+127)
+ 878 0274 0E94 0000 		call nrk_time_get
+ 356:main.c        **** 
+ 357:main.c        **** 	if(peer_data.receivedSeenMessage == true || peer_data.currentTime.secs - peer_data.transitionTime.
+ 880               	.LM54:
+ 881 0278 8091 0000 		lds r24,peer_data+152
+ 882 027c 8111      		cpse r24,__zero_reg__
+ 883 027e 00C0      		rjmp .L48
+ 885               	.LM55:
+ 886 0280 4091 0000 		lds r20,peer_data+127
+ 887 0284 5091 0000 		lds r21,peer_data+127+1
+ 888 0288 6091 0000 		lds r22,peer_data+127+2
+ 889 028c 7091 0000 		lds r23,peer_data+127+3
+ 890 0290 8091 0000 		lds r24,peer_data+135
+ 891 0294 9091 0000 		lds r25,peer_data+135+1
+ 892 0298 A091 0000 		lds r26,peer_data+135+2
+ 893 029c B091 0000 		lds r27,peer_data+135+3
+ 894 02a0 481B      		sub r20,r24
+ 895 02a2 590B      		sbc r21,r25
+ 896 02a4 6A0B      		sbc r22,r26
+ 897 02a6 7B0B      		sbc r23,r27
+ 898 02a8 81E0      		ldi r24,lo8(1)
+ 899 02aa 4630      		cpi r20,6
+ 900 02ac 5105      		cpc r21,__zero_reg__
+ 901 02ae 6105      		cpc r22,__zero_reg__
+ 902 02b0 7105      		cpc r23,__zero_reg__
+ 903 02b2 00F4      		brsh .L46
+ 904 02b4 80E0      		ldi r24,0
+ 905 02b6 0895      		ret
+ 906               	.L48:
+ 358:main.c        **** 	{
+ 359:main.c        **** 		allowTransition = true;
+ 908               	.LM56:
+ 909 02b8 81E0      		ldi r24,lo8(1)
+ 910               	.L46:
+ 360:main.c        **** 	}
+ 361:main.c        **** 
+ 362:main.c        **** 	return allowTransition;
+ 363:main.c        **** }
+ 912               	.LM57:
+ 913 02ba 0895      		ret
+ 918               	.Lscope8:
+ 920               		.stabd	78,0,0
+ 922               	.global	peer_allowTransitionGotAckToTest
+ 924               	peer_allowTransitionGotAckToTest:
+ 925               		.stabd	46,0,0
+ 364:main.c        **** 
+ 365:main.c        **** /**
+ 366:main.c        ****   * Allow transition from getting acknowledged from another peer to sending out TEST messages
+ 367:main.c        ****   * if we received a CTS from the gateway 
+ 368:main.c        ****   */
+ 369:main.c        **** inline bool peer_allowTransitionGotAckToTest(void)
+ 370:main.c        **** {
+ 927               	.LM58:
+ 928               	.LFBB9:
+ 929               	/* prologue: function */
+ 930               	/* frame size = 0 */
+ 931               	/* stack size = 0 */
+ 932               	.L__stack_usage = 0
+ 371:main.c        **** 	bool allowTransition = false;
+ 372:main.c        **** 
+ 373:main.c        **** 	if(peer_data.receivedCtsFromGateway == true)
+ 374:main.c        **** 	{
+ 375:main.c        **** 		allowTransition = true;
+ 376:main.c        **** 	}
+ 377:main.c        **** 
+ 378:main.c        **** 
+ 379:main.c        **** 	return allowTransition;
+ 380:main.c        **** }
+ 934               	.LM59:
+ 935 02bc 8091 0000 		lds r24,peer_data+153
+ 936 02c0 0895      		ret
+ 938               	.Lscope9:
+ 940               		.stabd	78,0,0
+ 942               	.global	peer_allowTransitionDoneToForwarding
+ 944               	peer_allowTransitionDoneToForwarding:
+ 945               		.stabd	46,0,0
+ 381:main.c        **** 
+ 382:main.c        **** /**
+ 383:main.c        ****   * Allow transition from done to forwarding if we receive an ACK from the gateway
+ 384:main.c        ****   */
+ 385:main.c        **** inline bool peer_allowTransitionDoneToForwarding(void)
+ 386:main.c        **** {
+ 947               	.LM60:
+ 948               	.LFBB10:
+ 949               	/* prologue: function */
+ 950               	/* frame size = 0 */
+ 951               	/* stack size = 0 */
+ 952               	.L__stack_usage = 0
+ 387:main.c        **** 	bool allowTransition = false;
+ 388:main.c        **** 
+ 389:main.c        **** 	if(peer_data.receivedAckFromGateway == true)
+ 390:main.c        **** 	{
+ 391:main.c        **** 		allowTransition = true;
+ 392:main.c        **** 	}
+ 393:main.c        **** 
+ 394:main.c        **** 	return allowTransition;
+ 395:main.c        **** }
+ 954               	.LM61:
+ 955 02c2 8091 0000 		lds r24,peer_data+154
+ 956 02c6 0895      		ret
+ 958               	.Lscope10:
+ 960               		.stabd	78,0,0
+ 962               	.global	peer_allowTransitionListeningToRTS
+ 964               	peer_allowTransitionListeningToRTS:
+ 965               		.stabd	46,0,0
+ 396:main.c        **** 
+ 397:main.c        **** /** 
+ 398:main.c        ****   * Allow transitin from listening to TEST messages to sending out RTS messages if we receieve
+ 399:main.c        ****   * a ROUTE command from the gateway
+ 400:main.c        ****   */
+ 401:main.c        **** inline bool peer_allowTransitionListeningToRTS(void)
+ 402:main.c        **** {
+ 967               	.LM62:
+ 968               	.LFBB11:
+ 969               	/* prologue: function */
+ 970               	/* frame size = 0 */
+ 971               	/* stack size = 0 */
+ 972               	.L__stack_usage = 0
+ 403:main.c        **** 	bool allowTransition = false;
+ 404:main.c        **** 
+ 405:main.c        **** 	if((receivedMessage == true) && (strcmp(ROUTE_STRING, peer_data.receive_buf) == 0))
+ 974               	.LM63:
+ 975 02c8 8091 0000 		lds r24,receivedMessage
+ 976 02cc 8823      		tst r24
+ 977 02ce 01F0      		breq .L54
+ 978               	.LBB28:
+ 979               	.LBB29:
+ 980 02d0 6091 0000 		lds r22,peer_data+7
+ 981 02d4 7091 0000 		lds r23,peer_data+7+1
+ 982 02d8 80E0      		ldi r24,lo8(.LC0)
+ 983 02da 90E0      		ldi r25,hi8(.LC0)
+ 984 02dc 0E94 0000 		call strcmp
+ 985 02e0 21E0      		ldi r18,lo8(1)
+ 986 02e2 892B      		or r24,r25
+ 987 02e4 01F0      		breq .L52
+ 988               	.L54:
+ 989               	.LBE29:
+ 990               	.LBE28:
+ 403:main.c        **** 	bool allowTransition = false;
+ 992               	.LM64:
+ 993 02e6 20E0      		ldi r18,0
+ 994               	.L52:
+ 406:main.c        **** 	{
+ 407:main.c        **** 		allowTransition = true;
+ 408:main.c        **** 	}
+ 409:main.c        **** 
+ 410:main.c        **** 	return allowTransition;
+ 411:main.c        **** }
+ 996               	.LM65:
+ 997 02e8 822F      		mov r24,r18
+ 998 02ea 0895      		ret
+ 1003               	.Lscope11:
+ 1005               		.stabd	78,0,0
+ 1007               	.global	peer_allowTransitionSendingAcksToRTS
+ 1009               	peer_allowTransitionSendingAcksToRTS:
+ 1010               		.stabd	46,0,0
+ 412:main.c        **** 
+ 413:main.c        **** inline bool peer_allowTransitionSendingAcksToRTS(void)
+ 414:main.c        **** {
+ 1012               	.LM66:
+ 1013               	.LFBB12:
+ 1014               	/* prologue: function */
+ 1015               	/* frame size = 0 */
+ 1016               	/* stack size = 0 */
+ 1017               	.L__stack_usage = 0
+ 415:main.c        **** 	bool allowTransition = false;
+ 416:main.c        **** 
+ 417:main.c        **** 	if((receivedMessage == true) && peer_data.len > 5 && peer_data.receive_buf[0] == 'G' && peer_data.
+ 1019               	.LM67:
+ 1020 02ec 8091 0000 		lds r24,receivedMessage
+ 1021 02f0 8823      		tst r24
+ 1022 02f2 01F0      		breq .L66
+ 1024               	.LM68:
+ 1025 02f4 8091 0000 		lds r24,peer_data+125
+ 1026 02f8 8630      		cpi r24,lo8(6)
+ 1027 02fa 00F0      		brlo .L66
+ 1028               	.LBB32:
+ 1029               	.LBB33:
+ 1031               	.LM69:
+ 1032 02fc E091 0000 		lds r30,peer_data+7
+ 1033 0300 F091 0000 		lds r31,peer_data+7+1
+ 1034 0304 8081      		ld r24,Z
+ 1035 0306 8734      		cpi r24,lo8(71)
+ 1036 0308 01F4      		brne .L66
+ 1037 030a 8181      		ldd r24,Z+1
+ 1038 030c 8435      		cpi r24,lo8(84)
+ 1039 030e 01F4      		brne .L66
+ 418:main.c        **** 		&& peer_data.receive_buf[2] == 'W' && peer_data.receive_buf[3] == ':' && peer_data.receive_buf[4]
+ 1041               	.LM70:
+ 1042 0310 8281      		ldd r24,Z+2
+ 1043 0312 8735      		cpi r24,lo8(87)
+ 1044 0314 01F4      		brne .L66
+ 1045 0316 8381      		ldd r24,Z+3
+ 1046 0318 8A33      		cpi r24,lo8(58)
+ 1047 031a 01F4      		brne .L66
+ 1048 031c 81E0      		ldi r24,lo8(1)
+ 1049 031e 9481      		ldd r25,Z+4
+ 1050 0320 9235      		cpi r25,lo8(82)
+ 1051 0322 01F0      		breq .L59
+ 1052               	.L66:
+ 1053               	.LBE33:
+ 1054               	.LBE32:
+ 415:main.c        **** 	bool allowTransition = false;
+ 1056               	.LM71:
+ 1057 0324 80E0      		ldi r24,0
+ 1058               	.L59:
+ 419:main.c        **** 	{
+ 420:main.c        **** 		allowTransition = true;
+ 421:main.c        **** 	}
+ 422:main.c        **** 
+ 423:main.c        **** 	return allowTransition;
+ 424:main.c        **** }
+ 1060               	.LM72:
+ 1061 0326 0895      		ret
+ 1066               	.Lscope12:
+ 1068               		.stabd	78,0,0
+ 1070               	.global	peer_processData
+ 1072               	peer_processData:
+ 1073               		.stabd	46,0,0
+ 425:main.c        **** 
+ 426:main.c        **** /*
+ 427:main.c        ****  * Process inputs
+ 428:main.c        ****  */
+ 429:main.c        **** void peer_processData(void)
+ 430:main.c        **** {
+ 1075               	.LM73:
+ 1076               	.LFBB13:
+ 1077               	/* prologue: function */
+ 1078               	/* frame size = 0 */
+ 1079               	/* stack size = 0 */
+ 1080               	.L__stack_usage = 0
+ 431:main.c        ****     // receive any messages
+ 432:main.c        ****     receivedMessage = peer_receiveMessage();
+ 1082               	.LM74:
+ 1083 0328 0E94 0000 		call peer_receiveMessage
+ 1084 032c 8093 0000 		sts receivedMessage,r24
+ 1085 0330 0895      		ret
+ 1087               	.Lscope13:
+ 1089               		.stabd	78,0,0
+ 1091               	.global	peer_getDesiredState
+ 1093               	peer_getDesiredState:
+ 1094               		.stabd	46,0,0
+ 433:main.c        **** 
+ 434:main.c        ****     // receive any messages
+ 435:main.c        **** }
+ 436:main.c        **** 
+ 437:main.c        **** /*
+ 438:main.c        ****  * Get the present state and determine if a state transition shall be performed. If so, set the 
+ 439:main.c        ****  * desired state to that new state.
+ 440:main.c        ****  */
+ 441:main.c        **** void peer_getDesiredState(void)
+ 442:main.c        **** {
+ 1096               	.LM75:
+ 1097               	.LFBB14:
+ 1098 0332 CF93      		push r28
+ 1099               	/* prologue: function */
+ 1100               	/* frame size = 0 */
+ 1101               	/* stack size = 1 */
+ 1102               	.L__stack_usage = 1
+ 443:main.c        ****   peer_state_E desiredState = peer_data.desiredState;
+ 1104               	.LM76:
+ 1105 0334 C091 0000 		lds r28,peer_data
+ 444:main.c        **** 
+ 445:main.c        ****   switch(desiredState)
+ 1107               	.LM77:
+ 1108 0338 8C2F      		mov r24,r28
+ 1109 033a 90E0      		ldi r25,0
+ 1110 033c 8730      		cpi r24,7
+ 1111 033e 9105      		cpc r25,__zero_reg__
+ 1112 0340 00F4      		brsh .L72
+ 1113 0342 FC01      		movw r30,r24
+ 1114 0344 E050      		subi r30,lo8(-(gs(.L74)))
+ 1115 0346 F040      		sbci r31,hi8(-(gs(.L74)))
+ 1116 0348 0C94 0000 		jmp __tablejump2__
+ 1117               		.section	.progmem.gcc_sw_table,"a",@progbits
+ 1118               		.p2align	1
+ 1119               	.L74:
+ 1120 0000 0000      		.word gs(.L73)
+ 1121 0002 0000      		.word gs(.L75)
+ 1122 0004 0000      		.word gs(.L76)
+ 1123 0006 0000      		.word gs(.L77)
+ 1124 0008 0000      		.word gs(.L78)
+ 1125 000a 0000      		.word gs(.L79)
+ 1126 000c 0000      		.word gs(.L80)
+ 1127               		.text
+ 1128               	.L73:
+ 446:main.c        ****   {
+ 447:main.c        ****         case STATE_WAIT:
+ 448:main.c        ****         	if(peer_allowTransitionWaitToRTS() == true)
+ 1130               	.LM78:
+ 1131 034c 0E94 0000 		call peer_allowTransitionWaitToRTS
+ 1132 0350 C82F      		mov r28,r24
+ 1133 0352 00C0      		rjmp .L72
+ 1134               	.L75:
+ 449:main.c        ****         	{
+ 450:main.c        ****         		desiredState = STATE_RTS;
+ 451:main.c        ****         	}
+ 452:main.c        ****         	else
+ 453:main.c        ****         	{
+ 454:main.c        ****         		// keep state
+ 455:main.c        ****         	}
+ 456:main.c        **** 
+ 457:main.c        ****         	break;
+ 458:main.c        **** 
+ 459:main.c        **** 	    case STATE_RTS:
+ 460:main.c        **** 	    	if(peer_allowTransitionRTSToTest() == true)
+ 1136               	.LM79:
+ 1137 0354 0E94 0000 		call peer_allowTransitionRTSToTest
+ 1138 0358 8111      		cpse r24,__zero_reg__
+ 1139 035a 00C0      		rjmp .L89
+ 461:main.c        **** 	    	{
+ 462:main.c        **** 	    		desiredState = STATE_TEST;
+ 463:main.c        **** 	    	}
+ 464:main.c        **** 	    	else if(peer_allowTransitionRTSToListening() == true)
+ 1141               	.LM80:
+ 1142 035c 0E94 0000 		call peer_allowTransitionRTSToListening
+ 1143 0360 8823      		tst r24
+ 1144 0362 01F0      		breq .L72
+ 465:main.c        **** 	    	{
+ 466:main.c        **** 	    		desiredState = STATE_LISTENING;
+ 1146               	.LM81:
+ 1147 0364 C3E0      		ldi r28,lo8(3)
+ 1148 0366 00C0      		rjmp .L72
+ 1149               	.L76:
+ 467:main.c        **** 	    	}
+ 468:main.c        **** 	    	else
+ 469:main.c        **** 	    	{
+ 470:main.c        **** 	    		// keep state
+ 471:main.c        **** 	    	}
+ 472:main.c        **** 
+ 473:main.c        **** 	    	break;
+ 474:main.c        **** 
+ 475:main.c        **** 	    case STATE_TEST:
+ 476:main.c        **** 	    	if(peer_allowTransitionTestToDone() == true)
+ 1151               	.LM82:
+ 1152 0368 0E94 0000 		call peer_allowTransitionTestToDone
+ 1153 036c 8823      		tst r24
+ 1154 036e 01F0      		breq .L89
+ 477:main.c        **** 	    	{
+ 478:main.c        **** 	    		desiredState = STATE_DONE;
+ 1156               	.LM83:
+ 1157 0370 C6E0      		ldi r28,lo8(6)
+ 1158 0372 00C0      		rjmp .L72
+ 1159               	.L77:
+ 479:main.c        **** 	    	}
+ 480:main.c        **** 	    	else
+ 481:main.c        **** 	    	{
+ 482:main.c        **** 	    		// keep state
+ 483:main.c        **** 	    	}
+ 484:main.c        **** 
+ 485:main.c        **** 	    	break;
+ 486:main.c        **** 
+ 487:main.c        **** 	    case STATE_LISTENING:
+ 488:main.c        **** 	    	if(peer_allowTransitionListeningToSendingAcks() == true)
+ 1161               	.LM84:
+ 1162 0374 0E94 0000 		call peer_allowTransitionListeningToSendingAcks
+ 1163 0378 8823      		tst r24
+ 1164 037a 01F0      		breq .L83
+ 1165               	.L86:
+ 489:main.c        **** 	    	{
+ 490:main.c        **** 	    		desiredState = STATE_SENDING_ACKS;
+ 1167               	.LM85:
+ 1168 037c C4E0      		ldi r28,lo8(4)
+ 1169 037e 00C0      		rjmp .L72
+ 1170               	.L83:
+ 491:main.c        **** 	    	}
+ 492:main.c        **** 	    	else if(peer_allowTransitionListeningToRTS() == true)
+ 1172               	.LM86:
+ 1173 0380 0E94 0000 		call peer_allowTransitionListeningToRTS
+ 1174 0384 8823      		tst r24
+ 1175 0386 01F0      		breq .L72
+ 1176               	.L85:
+ 493:main.c        **** 	    	{
+ 494:main.c        **** 	    		desiredState = STATE_RTS;
+ 1178               	.LM87:
+ 1179 0388 C1E0      		ldi r28,lo8(1)
+ 1180 038a 00C0      		rjmp .L72
+ 1181               	.L78:
+ 495:main.c        **** 	    	}
+ 496:main.c        **** 	    	else
+ 497:main.c        **** 	    	{
+ 498:main.c        **** 	    		// keep state
+ 499:main.c        **** 	    	}
+ 500:main.c        **** 
+ 501:main.c        **** 	    	break;
+ 502:main.c        **** 
+ 503:main.c        **** 	    case STATE_SENDING_ACKS:
+ 504:main.c        **** 	    	if(peer_allowTransitionSendingAcksToGotAck() == true)
+ 1183               	.LM88:
+ 1184 038c 0E94 0000 		call peer_allowTransitionSendingAcksToGotAck
+ 1185 0390 8823      		tst r24
+ 1186 0392 01F0      		breq .L84
+ 1187               	.L87:
+ 505:main.c        **** 	    	{
+ 506:main.c        **** 	    		desiredState = STATE_GOT_ACK;
+ 1189               	.LM89:
+ 1190 0394 C5E0      		ldi r28,lo8(5)
+ 1191 0396 00C0      		rjmp .L72
+ 1192               	.L84:
+ 507:main.c        **** 	    	}
+ 508:main.c        **** 	    	else if(peer_allowTransitionSendingAcksToRTS() == true)
+ 1194               	.LM90:
+ 1195 0398 0E94 0000 		call peer_allowTransitionSendingAcksToRTS
+ 1196 039c 8111      		cpse r24,__zero_reg__
+ 1197 039e 00C0      		rjmp .L85
+ 1198 03a0 00C0      		rjmp .L86
+ 1199               	.L79:
+ 509:main.c        **** 	    	{
+ 510:main.c        **** 	    		desiredState = STATE_RTS;
+ 511:main.c        **** 	    	}
+ 512:main.c        **** 	    	else
+ 513:main.c        **** 	    	{
+ 514:main.c        **** 	    		// keep state
+ 515:main.c        **** 	    	}
+ 516:main.c        **** 
+ 517:main.c        **** 	    	break;
+ 518:main.c        **** 
+ 519:main.c        **** 	    case STATE_GOT_ACK:
+ 520:main.c        **** 	    	if(peer_allowTransitionGotAckToTest() == true)
+ 1201               	.LM91:
+ 1202 03a2 0E94 0000 		call peer_allowTransitionGotAckToTest
+ 1203 03a6 8111      		cpse r24,__zero_reg__
+ 1204 03a8 00C0      		rjmp .L89
+ 1205 03aa 00C0      		rjmp .L87
+ 1206               	.L80:
+ 521:main.c        **** 	    	{
+ 522:main.c        **** 	    		desiredState = STATE_TEST;
+ 523:main.c        **** 	    	}
+ 524:main.c        **** 	    	else
+ 525:main.c        **** 	    	{
+ 526:main.c        **** 	    		// keep state
+ 527:main.c        **** 	    	}
+ 528:main.c        **** 
+ 529:main.c        **** 	    	break;
+ 530:main.c        **** 
+ 531:main.c        **** 	    case STATE_DONE:
+ 532:main.c        **** 	    	if(peer_allowTransitionDoneToForwarding() == true)
+ 1208               	.LM92:
+ 1209 03ac 0E94 0000 		call peer_allowTransitionDoneToForwarding
+ 1210 03b0 8823      		tst r24
+ 1211 03b2 01F0      		breq .L72
+ 533:main.c        **** 	    	{
+ 534:main.c        **** 	    		desiredState = STATE_FORWARDING;
+ 1213               	.LM93:
+ 1214 03b4 C7E0      		ldi r28,lo8(7)
+ 1215 03b6 00C0      		rjmp .L72
+ 1216               	.L89:
+ 522:main.c        **** 	    	}
+ 1218               	.LM94:
+ 1219 03b8 C2E0      		ldi r28,lo8(2)
+ 1220               	.L72:
+ 535:main.c        **** 	    	}
+ 536:main.c        **** 	    	else
+ 537:main.c        **** 	    	{
+ 538:main.c        **** 	    		// keep state
+ 539:main.c        **** 	    	}
+ 540:main.c        **** 
+ 541:main.c        **** 	    	break;
+ 542:main.c        **** 
+ 543:main.c        **** 	    case STATE_FORWARDING:
+ 544:main.c        **** 
+ 545:main.c        **** 	    	break;
+ 546:main.c        **** 
+ 547:main.c        ****         default:
+ 548:main.c        ****             // should never reach here, error
+ 549:main.c        ****              break;
+ 550:main.c        ****   }
+ 551:main.c        ****     
+ 552:main.c        ****     peer_data.desiredState = desiredState;
+ 1222               	.LM95:
+ 1223 03ba C093 0000 		sts peer_data,r28
+ 1224               	/* epilogue start */
+ 553:main.c        **** }
+ 1226               	.LM96:
+ 1227 03be CF91      		pop r28
+ 1228 03c0 0895      		ret
+ 1233               	.Lscope14:
+ 1235               		.stabd	78,0,0
+ 1236               		.section	.rodata.str1.1
+ 1237               	.LC1:
+ 1238 000a 5254 533A 		.string	"RTS:%d"
+ 1238      2564 00
+ 1239               	.LC2:
+ 1240 0011 0A00      		.string	"\n"
+ 1241               	.LC3:
+ 1242 0013 5345 454E 		.string	"SEEN:%d"
+ 1242      3A25 6400 
+ 1243               	.LC4:
+ 1244 001b 5445 5354 		.string	"TEST:%d"
+ 1244      3A25 6400 
+ 1245               	.LC5:
+ 1246 0023 4143 4B3A 		.string	"ACK:%d"
+ 1246      2564 00
+ 1247               	.LC6:
+ 1248 002a 444F 4E45 		.string	"DONE\nFROM:%d\nTO:GTW\nSEEN\n"
+ 1248      0A46 524F 
+ 1248      4D3A 2564 
+ 1248      0A54 4F3A 
+ 1248      4754 570A 
+ 1249               		.text
+ 1251               	.global	peer_setCurrentState
+ 1253               	peer_setCurrentState:
+ 1254               		.stabd	46,0,0
+ 554:main.c        **** 
+ 555:main.c        **** /*
+ 556:main.c        ****  * Perform any transition and state related outputs
+ 557:main.c        ****  */
+ 558:main.c        **** void peer_setCurrentState(void)
+ 559:main.c        **** {
+ 1256               	.LM97:
+ 1257               	.LFBB15:
+ 1258 03c2 CF92      		push r12
+ 1259 03c4 DF92      		push r13
+ 1260 03c6 EF92      		push r14
+ 1261 03c8 FF92      		push r15
+ 1262 03ca 0F93      		push r16
+ 1263 03cc 1F93      		push r17
+ 1264 03ce CF93      		push r28
+ 1265 03d0 DF93      		push r29
+ 1266               	/* prologue: function */
+ 1267               	/* frame size = 0 */
+ 1268               	/* stack size = 8 */
+ 1269               	.L__stack_usage = 8
+ 560:main.c        ****     peer_state_E state = peer_data.desiredState;
+ 1271               	.LM98:
+ 1272 03d2 F090 0000 		lds r15,peer_data
+ 561:main.c        ****     uint16_t peerId = 0;
+ 562:main.c        **** 
+ 563:main.c        ****     switch(state)
+ 1274               	.LM99:
+ 1275 03d6 8F2D      		mov r24,r15
+ 1276 03d8 90E0      		ldi r25,0
+ 1277 03da 8830      		cpi r24,8
+ 1278 03dc 9105      		cpc r25,__zero_reg__
+ 1279 03de 00F0      		brlo .+2
+ 1280 03e0 00C0      		rjmp .L100
+ 1281 03e2 FC01      		movw r30,r24
+ 1282 03e4 E050      		subi r30,lo8(-(gs(.L102)))
+ 1283 03e6 F040      		sbci r31,hi8(-(gs(.L102)))
+ 1284               	.LBB34:
+ 564:main.c        ****     {
+ 565:main.c        ****         case STATE_WAIT:
+ 566:main.c        ****         	if(peer_data.stateTransition == true)
+ 567:main.c        ****         	{
+ 568:main.c        ****             	nrk_kprintf (PSTR ("--> Node just turned on, waiting for route command\r\n"));
+ 569:main.c        ****         	}
+ 570:main.c        **** 
+ 571:main.c        ****         	// do nothing in the wait state, just wait for GTW:ROUTE command
+ 572:main.c        **** 
+ 573:main.c        ****         	break;
+ 574:main.c        **** 
+ 575:main.c        **** 	    case STATE_RTS:
+ 576:main.c        ****         	if(peer_data.stateTransition == true)
+ 577:main.c        ****         	{
+ 578:main.c        ****     			nrk_kprintf (PSTR ("--> Received routing command, starting to send RTS messages\r\n"));
+ 579:main.c        **** 			nrk_led_clr(RED_LED);
+ 580:main.c        **** 			nrk_led_clr(GREEN_LED);
+ 581:main.c        **** 			nrk_led_clr(ORANGE_LED);
+ 582:main.c        **** 	        	nrk_led_set(BLUE_LED);
+ 583:main.c        **** 
+ 584:main.c        **** 	        	// Clear everything
+ 585:main.c        ****         	}
+ 586:main.c        **** 
+ 587:main.c        ****         	/*
+ 588:main.c        ****         	 * Send out RTS messages with this nodes MAC address, waiting for the GTW to respond
+ 589:main.c        ****         	 */
+ 590:main.c        ****         	sprintf((peer_data.tx_buf), "RTS:%d", MAC_ADDR);
+ 591:main.c        ****         	peer_sendMessage();
+ 592:main.c        ****         
+ 593:main.c        **** 	    	break;
+ 594:main.c        **** 
+ 595:main.c        **** 	    case STATE_TEST:
+ 596:main.c        ****         	if(peer_data.stateTransition == true)
+ 597:main.c        ****         	{
+ 598:main.c        ****         		nrk_led_clr(BLUE_LED);
+ 599:main.c        **** 				nrk_led_clr(GREEN_LED);
+ 600:main.c        **** 				nrk_led_clr(ORANGE_LED);
+ 601:main.c        ****         		nrk_led_set(RED_LED);
+ 602:main.c        **** 
+ 603:main.c        ****         		nrk_kprintf (PSTR ("--> Received CTS command from GTW. Testing to see if nodes are in vic
+ 604:main.c        **** 
+ 605:main.c        ****         		// grab time transition into state
+ 606:main.c        ****         		nrk_time_get(&(peer_data.testStateLastReceivedAckMessage));
+ 607:main.c        ****         	}
+ 608:main.c        **** 
+ 609:main.c        ****         	if(receivedMessage == true)
+ 610:main.c        ****         	{
+ 611:main.c        ****         		uint8_t *buf = (peer_data.receive_buf);
+ 612:main.c        **** 
+ 613:main.c        ****         		// check to see if we received an ACK message from another peer and add them to the neigh
+ 614:main.c        ****         		// to send to the gateway
+ 615:main.c        ****         		if(peer_data.len > 4 && buf[0] == 'A' && buf[1] == 'C' && buf[2] == 'K' && buf[3] == ':')
+ 616:main.c        ****         		{
+ 617:main.c        ****         			buf = buf + 4;
+ 618:main.c        **** 
+ 619:main.c        ****         			peerId = atoi(buf);
+ 620:main.c        **** 
+ 621:main.c        ****         			peer_data.sendSeen = true;
+ 622:main.c        **** 
+ 623:main.c        ****         			if(peer_data.nodesSeen[peerId] == 0)
+ 624:main.c        ****         			{
+ 625:main.c        **** 						nrk_time_get(&(peer_data.testStateLastReceivedAckMessage));
+ 626:main.c        **** 
+ 627:main.c        ****         				strcat(peer_data.done_message, buf);
+ 628:main.c        ****         				strcat(peer_data.done_message, "\n");
+ 629:main.c        **** 						peer_data.nodesSeen[peerId] = 1;
+ 630:main.c        ****         			}
+ 631:main.c        **** 
+ 632:main.c        ****         		}
+ 633:main.c        ****         	}
+ 634:main.c        **** 
+ 635:main.c        ****         	if(peer_data.sendSeen == true)
+ 636:main.c        ****         	{
+ 637:main.c        **** 				sprintf(peer_data.tx_buf, "SEEN:%d", peerId);
+ 638:main.c        **** 				peer_sendMessage();
+ 639:main.c        **** 				peer_data.sendSeenCount += 1;
+ 640:main.c        **** 
+ 641:main.c        **** 				if(peer_data.sendSeenCount >= MAX_TIMES_SEND_SEEN)
+ 642:main.c        **** 				{
+ 643:main.c        **** 					peer_data.sendSeenCount = 0;
+ 644:main.c        **** 					peer_data.sendSeen = false;
+ 645:main.c        **** 				}
+ 646:main.c        **** 			}
+ 647:main.c        **** 			else
+ 648:main.c        **** 			{
+ 649:main.c        **** 	        	sprintf((peer_data.tx_buf), "TEST:%d", MAC_ADDR);
+ 650:main.c        ****         		peer_sendMessage();
+ 651:main.c        **** 			}
+ 652:main.c        **** 
+ 653:main.c        **** 
+ 654:main.c        **** 
+ 655:main.c        **** 	    	break;
+ 656:main.c        **** 
+ 657:main.c        **** 	    case STATE_LISTENING:
+ 658:main.c        ****         	if(peer_data.stateTransition == true)
+ 659:main.c        ****         	{
+ 660:main.c        ****         		nrk_kprintf (PSTR ("--> Listening for TEST commands from a nearby node \r\n"));
+ 661:main.c        ****         	}
+ 662:main.c        **** 
+ 663:main.c        **** 		nrk_led_clr(BLUE_LED);
+ 664:main.c        **** 		nrk_led_set(GREEN_LED);
+ 665:main.c        **** 		nrk_led_clr(ORANGE_LED);
+ 666:main.c        ****         	nrk_led_clr(RED_LED);
+ 667:main.c        **** 
+ 668:main.c        ****         	uint8_t *buf = (peer_data.receive_buf);
+ 669:main.c        **** 
+ 670:main.c        ****         	if(receivedMessage == true)
+ 671:main.c        ****         	{
+ 672:main.c        ****         		// check to see if received message is a TEST message
+ 673:main.c        ****         		if(peer_data.len > 5 && buf[0] == 'T' && buf[1] == 'E' && buf[2] == 'S' && buf[3] == 'T' 
+ 674:main.c        ****         		{
+ 675:main.c        ****         			peer_data.receivedTestMessage = true;
+ 676:main.c        ****         		}
+ 677:main.c        ****         	}
+ 678:main.c        **** 
+ 679:main.c        **** 	    	break;
+ 680:main.c        **** 
+ 681:main.c        **** 	    case STATE_SENDING_ACKS:
+ 682:main.c        ****         	if(peer_data.stateTransition == true)
+ 683:main.c        ****         	{
+ 684:main.c        ****         	   nrk_kprintf (PSTR ("--> Saw a test command, attempting to send acknoledgement\r\n"));
+ 685:main.c        ****         	   nrk_time_get(&(peer_data.transitionTime));
+ 686:main.c        ****         	}
+ 687:main.c        **** 
+ 688:main.c        **** 		nrk_led_set(BLUE_LED);
+ 689:main.c        **** 		nrk_led_set(GREEN_LED);
+ 690:main.c        **** 		nrk_led_clr(ORANGE_LED);
+ 691:main.c        ****         	nrk_led_clr(RED_LED);
+ 692:main.c        ****         	// Let the peer sending test messages know that I am there by sending ACK messages with my
+ 693:main.c        ****         	sprintf(peer_data.tx_buf, "ACK:%d", MAC_ADDR);
+ 694:main.c        ****         	peer_sendMessage();
+ 695:main.c        **** 
+ 696:main.c        ****         	if(receivedMessage == true)
+ 697:main.c        ****         	{
+ 698:main.c        ****         		// check to see if received message is a TEST message
+ 699:main.c        ****         		if(peer_data.len > 5 && buf[0] == 'S' && buf[1] == 'E' && buf[2] == 'E' && buf[3] == 'N' 
+ 700:main.c        ****         		{
+ 701:main.c        ****         			buf = buf + 5;
+ 702:main.c        ****         			peerId = atoi(buf);
+ 703:main.c        **** 
+ 704:main.c        ****         			if(peerId == MAC_ADDR)
+ 705:main.c        ****         			{
+ 706:main.c        ****         				peer_data.receivedSeenMessage = true;
+ 707:main.c        ****         			}
+ 708:main.c        ****         		}
+ 709:main.c        ****         	}
+ 710:main.c        **** 
+ 711:main.c        **** 	    	break;
+ 712:main.c        **** 
+ 713:main.c        **** 	    case STATE_GOT_ACK:
+ 714:main.c        **** 	    	if(peer_data.stateTransition == true)
+ 715:main.c        ****         	{
+ 716:main.c        ****         		nrk_kprintf (PSTR ("--> Received a SEEN command from nearby peer, waiting for CTS from GT
+ 717:main.c        ****         	}
+ 718:main.c        **** 
+ 719:main.c        **** 		nrk_led_set(BLUE_LED);
+ 720:main.c        **** 		nrk_led_clr(GREEN_LED);
+ 721:main.c        **** 		nrk_led_clr(ORANGE_LED);
+ 722:main.c        ****         	nrk_led_set(RED_LED);
+ 723:main.c        ****         	// at this point, this node will be called by the gateway as CTS in the near future, so 
+ 724:main.c        ****         	// we wait for a CTS:<my MAC> from the gateway before transitioning to the test state, loo
+ 725:main.c        ****         	// for neighbor nodes
+ 726:main.c        ****         	if(receivedMessage == true)
+ 727:main.c        ****         	{
+ 728:main.c        ****         		// check to see if received message is a TEST message
+ 729:main.c        ****         		if(peer_data.len > 4 && buf[0] == 'C' && buf[1] == 'T' && buf[2] == 'S' && buf[3] == ':')
+ 730:main.c        ****         		{
+ 731:main.c        ****         			buf = buf + 4;
+ 732:main.c        ****         			peerId = atoi(buf);
+ 733:main.c        **** 
+ 734:main.c        ****         			if(peerId == MAC_ADDR)
+ 735:main.c        ****         			{
+ 736:main.c        ****         				peer_data.receivedCtsFromGateway = true;
+ 737:main.c        ****         			}
+ 738:main.c        ****         		}
+ 739:main.c        ****         	}
+ 740:main.c        **** 
+ 741:main.c        **** 	    	break;
+ 742:main.c        **** 
+ 743:main.c        **** 	    case STATE_DONE:
+ 744:main.c        ****         	if(peer_data.stateTransition == true)
+ 745:main.c        ****         	{
+ 746:main.c        ****         		nrk_kprintf (PSTR ("--> Done receiving ACK messages from nearby peers, sending results to
+ 747:main.c        **** 		    	nrk_led_clr(RED_LED);
+ 748:main.c        **** 		    	nrk_led_clr(BLUE_LED);
+ 749:main.c        **** 		    	nrk_led_set(GREEN_LED);
+ 750:main.c        **** 			nrk_led_set(ORANGE_LED);
+ 751:main.c        ****         	}
+ 752:main.c        **** 
+ 753:main.c        ****         	// Done getting neighbors list, build information from nodes and send to gateway
+ 754:main.c        ****         	sprintf(peer_data.tx_buf, "DONE\nFROM:%d\nTO:GTW\nSEEN\n", MAC_ADDR);      	
+ 755:main.c        **** 		strcat(peer_data.tx_buf, peer_data.done_message);
+ 756:main.c        **** 
+ 757:main.c        ****         	peer_sendMessage();
+ 758:main.c        **** 
+ 759:main.c        ****         	if(receivedMessage == true)
+ 760:main.c        ****         	{
+ 761:main.c        ****         		char* buf = peer_data.receive_buf;
+ 762:main.c        **** 
+ 763:main.c        ****         		if(peer_data.len > 4 && buf[0] == 'A' && buf[1] == 'C' && buf[2] == 'K' && buf[3] == ':')
+ 764:main.c        ****         		{
+ 765:main.c        ****         			buf = buf + 4;
+ 766:main.c        **** 
+ 767:main.c        ****         			if(atoi(buf) == MAC_ADDR)
+ 768:main.c        ****         			{
+ 769:main.c        ****         				peer_data.receivedAckFromGateway = true;
+ 770:main.c        ****         			}
+ 771:main.c        ****         		}
+ 772:main.c        ****         	}
+ 773:main.c        **** 
+ 774:main.c        **** 	    	break;
+ 775:main.c        **** 
+ 776:main.c        **** 	    case STATE_FORWARDING:
+ 777:main.c        ****         	if(peer_data.stateTransition == true)
+ 1286               	.LM100:
+ 1287 03e8 8091 0000 		lds r24,peer_data+2
+ 1288               	.LBE34:
+ 563:main.c        ****     {
+ 1290               	.LM101:
+ 1291 03ec 0C94 0000 		jmp __tablejump2__
+ 1292               		.section	.progmem.gcc_sw_table,"a",@progbits
+ 1293               		.p2align	1
+ 1294               	.L102:
+ 1295 000e 0000      		.word gs(.L101)
+ 1296 0010 0000      		.word gs(.L103)
+ 1297 0012 0000      		.word gs(.L104)
+ 1298 0014 0000      		.word gs(.L105)
+ 1299 0016 0000      		.word gs(.L106)
+ 1300 0018 0000      		.word gs(.L107)
+ 1301 001a 0000      		.word gs(.L108)
+ 1302 001c 0000      		.word gs(.L109)
+ 1303               		.text
+ 1304               	.L101:
+ 1305               	.LBB37:
+ 566:main.c        ****         	{
+ 1307               	.LM102:
+ 1308 03f0 8823      		tst r24
+ 1309 03f2 01F4      		brne .+2
+ 1310 03f4 00C0      		rjmp .L100
+ 568:main.c        ****         	}
+ 1312               	.LM103:
+ 1313 03f6 80E0      		ldi r24,lo8(__c.3810)
+ 1314 03f8 90E0      		ldi r25,hi8(__c.3810)
+ 1315 03fa 0E94 0000 		call nrk_kprintf
+ 1316 03fe 00C0      		rjmp .L100
+ 1317               	.L103:
+ 576:main.c        ****         	{
+ 1319               	.LM104:
+ 1320 0400 8823      		tst r24
+ 1321 0402 01F0      		breq .L111
+ 578:main.c        **** 			nrk_led_clr(RED_LED);
+ 1323               	.LM105:
+ 1324 0404 80E0      		ldi r24,lo8(__c.3814)
+ 1325 0406 90E0      		ldi r25,hi8(__c.3814)
+ 1326 0408 0E94 0000 		call nrk_kprintf
+ 579:main.c        **** 			nrk_led_clr(GREEN_LED);
+ 1328               	.LM106:
+ 1329 040c 80E0      		ldi r24,0
+ 1330 040e 90E0      		ldi r25,0
+ 1331 0410 0E94 0000 		call nrk_led_clr
+ 580:main.c        **** 			nrk_led_clr(ORANGE_LED);
+ 1333               	.LM107:
+ 1334 0414 81E0      		ldi r24,lo8(1)
+ 1335 0416 90E0      		ldi r25,0
+ 1336 0418 0E94 0000 		call nrk_led_clr
+ 581:main.c        **** 	        	nrk_led_set(BLUE_LED);
+ 1338               	.LM108:
+ 1339 041c 82E0      		ldi r24,lo8(2)
+ 1340 041e 90E0      		ldi r25,0
+ 1341 0420 0E94 0000 		call nrk_led_clr
+ 582:main.c        **** 
+ 1343               	.LM109:
+ 1344 0424 83E0      		ldi r24,lo8(3)
+ 1345 0426 90E0      		ldi r25,0
+ 1346 0428 0E94 0000 		call nrk_led_set
+ 1347               	.L111:
+ 590:main.c        ****         	peer_sendMessage();
+ 1349               	.LM110:
+ 1350 042c 1F92      		push __zero_reg__
+ 1351 042e 1F92      		push __zero_reg__
+ 1352 0430 80E0      		ldi r24,lo8(.LC1)
+ 1353 0432 90E0      		ldi r25,hi8(.LC1)
+ 1354 0434 00C0      		rjmp .L160
+ 1355               	.L104:
+ 596:main.c        ****         	{
+ 1357               	.LM111:
+ 1358 0436 8823      		tst r24
+ 1359 0438 01F0      		breq .L112
+ 598:main.c        **** 				nrk_led_clr(GREEN_LED);
+ 1361               	.LM112:
+ 1362 043a 83E0      		ldi r24,lo8(3)
+ 1363 043c 90E0      		ldi r25,0
+ 1364 043e 0E94 0000 		call nrk_led_clr
+ 599:main.c        **** 				nrk_led_clr(ORANGE_LED);
+ 1366               	.LM113:
+ 1367 0442 81E0      		ldi r24,lo8(1)
+ 1368 0444 90E0      		ldi r25,0
+ 1369 0446 0E94 0000 		call nrk_led_clr
+ 600:main.c        ****         		nrk_led_set(RED_LED);
+ 1371               	.LM114:
+ 1372 044a 82E0      		ldi r24,lo8(2)
+ 1373 044c 90E0      		ldi r25,0
+ 1374 044e 0E94 0000 		call nrk_led_clr
+ 601:main.c        **** 
+ 1376               	.LM115:
+ 1377 0452 80E0      		ldi r24,0
+ 1378 0454 90E0      		ldi r25,0
+ 1379 0456 0E94 0000 		call nrk_led_set
+ 603:main.c        **** 
+ 1381               	.LM116:
+ 1382 045a 80E0      		ldi r24,lo8(__c.3817)
+ 1383 045c 90E0      		ldi r25,hi8(__c.3817)
+ 1384 045e 0E94 0000 		call nrk_kprintf
+ 606:main.c        ****         	}
+ 1386               	.LM117:
+ 1387 0462 80E0      		ldi r24,lo8(peer_data+143)
+ 1388 0464 90E0      		ldi r25,hi8(peer_data+143)
+ 1389 0466 0E94 0000 		call nrk_time_get
+ 1390               	.L112:
+ 609:main.c        ****         	{
+ 1392               	.LM118:
+ 1393 046a 8091 0000 		lds r24,receivedMessage
+ 1394 046e 8823      		tst r24
+ 1395 0470 01F0      		breq .L126
+ 1396               	.LBB35:
+ 611:main.c        **** 
+ 1398               	.LM119:
+ 1399 0472 E091 0000 		lds r30,peer_data+7
+ 1400 0476 F091 0000 		lds r31,peer_data+7+1
+ 615:main.c        ****         		{
+ 1402               	.LM120:
+ 1403 047a 8091 0000 		lds r24,peer_data+125
+ 1404 047e 8530      		cpi r24,lo8(5)
+ 1405 0480 00F0      		brlo .L126
+ 615:main.c        ****         		{
+ 1407               	.LM121:
+ 1408 0482 8081      		ld r24,Z
+ 1409 0484 8134      		cpi r24,lo8(65)
+ 1410 0486 01F4      		brne .L126
+ 615:main.c        ****         		{
+ 1412               	.LM122:
+ 1413 0488 8181      		ldd r24,Z+1
+ 1414 048a 8334      		cpi r24,lo8(67)
+ 1415 048c 01F4      		brne .L126
+ 615:main.c        ****         		{
+ 1417               	.LM123:
+ 1418 048e 8281      		ldd r24,Z+2
+ 1419 0490 8B34      		cpi r24,lo8(75)
+ 1420 0492 01F4      		brne .L126
+ 615:main.c        ****         		{
+ 1422               	.LM124:
+ 1423 0494 8381      		ldd r24,Z+3
+ 1424 0496 8A33      		cpi r24,lo8(58)
+ 1425 0498 01F4      		brne .L126
+ 617:main.c        **** 
+ 1427               	.LM125:
+ 1428 049a 8F01      		movw r16,r30
+ 1429 049c 0C5F      		subi r16,-4
+ 1430 049e 1F4F      		sbci r17,-1
+ 619:main.c        **** 
+ 1432               	.LM126:
+ 1433 04a0 C801      		movw r24,r16
+ 1434 04a2 0E94 0000 		call atoi
+ 1435 04a6 EC01      		movw r28,r24
+ 621:main.c        **** 
+ 1437               	.LM127:
+ 1438 04a8 EE24      		clr r14
+ 1439 04aa E394      		inc r14
+ 1440 04ac E092 0000 		sts peer_data+155,r14
+ 623:main.c        ****         			{
+ 1442               	.LM128:
+ 1443 04b0 8050      		subi r24,lo8(-(peer_data+273))
+ 1444 04b2 9040      		sbci r25,hi8(-(peer_data+273))
+ 1445 04b4 6C01      		movw r12,r24
+ 1446 04b6 FC01      		movw r30,r24
+ 1447 04b8 8081      		ld r24,Z
+ 1448 04ba 8111      		cpse r24,__zero_reg__
+ 1449 04bc 00C0      		rjmp .L113
+ 625:main.c        **** 
+ 1451               	.LM129:
+ 1452 04be 80E0      		ldi r24,lo8(peer_data+143)
+ 1453 04c0 90E0      		ldi r25,hi8(peer_data+143)
+ 1454 04c2 0E94 0000 		call nrk_time_get
+ 627:main.c        ****         				strcat(peer_data.done_message, "\n");
+ 1456               	.LM130:
+ 1457 04c6 B801      		movw r22,r16
+ 1458 04c8 80E0      		ldi r24,lo8(peer_data+157)
+ 1459 04ca 90E0      		ldi r25,hi8(peer_data+157)
+ 1460 04cc 0E94 0000 		call strcat
+ 628:main.c        **** 						peer_data.nodesSeen[peerId] = 1;
+ 1462               	.LM131:
+ 1463 04d0 60E0      		ldi r22,lo8(.LC2)
+ 1464 04d2 70E0      		ldi r23,hi8(.LC2)
+ 1465 04d4 80E0      		ldi r24,lo8(peer_data+157)
+ 1466 04d6 90E0      		ldi r25,hi8(peer_data+157)
+ 1467 04d8 0E94 0000 		call strcat
+ 629:main.c        ****         			}
+ 1469               	.LM132:
+ 1470 04dc F601      		movw r30,r12
+ 1471 04de E082      		st Z,r14
+ 1472 04e0 00C0      		rjmp .L113
+ 1473               	.L126:
+ 1474               	.LBE35:
+ 1475               	.LBE37:
+ 561:main.c        **** 
+ 1477               	.LM133:
+ 1478 04e2 C0E0      		ldi r28,0
+ 1479 04e4 D0E0      		ldi r29,0
+ 1480               	.L113:
+ 1481               	.LBB38:
+ 635:main.c        ****         	{
+ 1483               	.LM134:
+ 1484 04e6 8091 0000 		lds r24,peer_data+155
+ 1485 04ea 8823      		tst r24
+ 1486 04ec 01F0      		breq .L114
+ 637:main.c        **** 				peer_sendMessage();
+ 1488               	.LM135:
+ 1489 04ee DF93      		push r29
+ 1490 04f0 CF93      		push r28
+ 1491 04f2 80E0      		ldi r24,lo8(.LC3)
+ 1492 04f4 90E0      		ldi r25,hi8(.LC3)
+ 1493 04f6 9F93      		push r25
+ 1494 04f8 8F93      		push r24
+ 1495 04fa 80E0      		ldi r24,lo8(peer_data+9)
+ 1496 04fc 90E0      		ldi r25,hi8(peer_data+9)
+ 1497 04fe 9F93      		push r25
+ 1498 0500 8F93      		push r24
+ 1499 0502 0E94 0000 		call sprintf
+ 638:main.c        **** 				peer_data.sendSeenCount += 1;
+ 1501               	.LM136:
+ 1502 0506 0E94 0000 		call peer_sendMessage
+ 639:main.c        **** 
+ 1504               	.LM137:
+ 1505 050a 8091 0000 		lds r24,peer_data+156
+ 1506 050e 8F5F      		subi r24,lo8(-(1))
+ 641:main.c        **** 				{
+ 1508               	.LM138:
+ 1509 0510 0F90      		pop __tmp_reg__
+ 1510 0512 0F90      		pop __tmp_reg__
+ 1511 0514 0F90      		pop __tmp_reg__
+ 1512 0516 0F90      		pop __tmp_reg__
+ 1513 0518 0F90      		pop __tmp_reg__
+ 1514 051a 0F90      		pop __tmp_reg__
+ 1515 051c 8330      		cpi r24,lo8(3)
+ 1516 051e 00F4      		brsh .L115
+ 639:main.c        **** 
+ 1518               	.LM139:
+ 1519 0520 8093 0000 		sts peer_data+156,r24
+ 1520 0524 00C0      		rjmp .L100
+ 1521               	.L115:
+ 643:main.c        **** 					peer_data.sendSeen = false;
+ 1523               	.LM140:
+ 1524 0526 1092 0000 		sts peer_data+156,__zero_reg__
+ 644:main.c        **** 				}
+ 1526               	.LM141:
+ 1527 052a 1092 0000 		sts peer_data+155,__zero_reg__
+ 1528 052e 00C0      		rjmp .L100
+ 1529               	.L114:
+ 649:main.c        ****         		peer_sendMessage();
+ 1531               	.LM142:
+ 1532 0530 1F92      		push __zero_reg__
+ 1533 0532 1F92      		push __zero_reg__
+ 1534 0534 80E0      		ldi r24,lo8(.LC4)
+ 1535 0536 90E0      		ldi r25,hi8(.LC4)
+ 1536               	.L160:
+ 1537 0538 9F93      		push r25
+ 1538 053a 8F93      		push r24
+ 1539 053c 80E0      		ldi r24,lo8(peer_data+9)
+ 1540 053e 90E0      		ldi r25,hi8(peer_data+9)
+ 1541 0540 9F93      		push r25
+ 1542 0542 8F93      		push r24
+ 1543 0544 0E94 0000 		call sprintf
+ 650:main.c        **** 			}
+ 1545               	.LM143:
+ 1546 0548 0E94 0000 		call peer_sendMessage
+ 1547 054c 0F90      		pop __tmp_reg__
+ 1548 054e 0F90      		pop __tmp_reg__
+ 1549 0550 0F90      		pop __tmp_reg__
+ 1550 0552 0F90      		pop __tmp_reg__
+ 1551 0554 0F90      		pop __tmp_reg__
+ 1552 0556 0F90      		pop __tmp_reg__
+ 1553 0558 00C0      		rjmp .L100
+ 1554               	.L105:
+ 658:main.c        ****         	{
+ 1556               	.LM144:
+ 1557 055a 8823      		tst r24
+ 1558 055c 01F0      		breq .L117
+ 660:main.c        ****         	}
+ 1560               	.LM145:
+ 1561 055e 80E0      		ldi r24,lo8(__c.3821)
+ 1562 0560 90E0      		ldi r25,hi8(__c.3821)
+ 1563 0562 0E94 0000 		call nrk_kprintf
+ 1564               	.L117:
+ 663:main.c        **** 		nrk_led_set(GREEN_LED);
+ 1566               	.LM146:
+ 1567 0566 83E0      		ldi r24,lo8(3)
+ 1568 0568 90E0      		ldi r25,0
+ 1569 056a 0E94 0000 		call nrk_led_clr
+ 664:main.c        **** 		nrk_led_clr(ORANGE_LED);
+ 1571               	.LM147:
+ 1572 056e 81E0      		ldi r24,lo8(1)
+ 1573 0570 90E0      		ldi r25,0
+ 1574 0572 0E94 0000 		call nrk_led_set
+ 665:main.c        ****         	nrk_led_clr(RED_LED);
+ 1576               	.LM148:
+ 1577 0576 82E0      		ldi r24,lo8(2)
+ 1578 0578 90E0      		ldi r25,0
+ 1579 057a 0E94 0000 		call nrk_led_clr
+ 666:main.c        **** 
+ 1581               	.LM149:
+ 1582 057e 80E0      		ldi r24,0
+ 1583 0580 90E0      		ldi r25,0
+ 1584 0582 0E94 0000 		call nrk_led_clr
+ 668:main.c        **** 
+ 1586               	.LM150:
+ 1587 0586 E091 0000 		lds r30,peer_data+7
+ 1588 058a F091 0000 		lds r31,peer_data+7+1
+ 670:main.c        ****         	{
+ 1590               	.LM151:
+ 1591 058e 8091 0000 		lds r24,receivedMessage
+ 1592 0592 8823      		tst r24
+ 1593 0594 01F4      		brne .+2
+ 1594 0596 00C0      		rjmp .L100
+ 673:main.c        ****         		{
+ 1596               	.LM152:
+ 1597 0598 8091 0000 		lds r24,peer_data+125
+ 1598 059c 8630      		cpi r24,lo8(6)
+ 1599 059e 00F4      		brsh .+2
+ 1600 05a0 00C0      		rjmp .L100
+ 673:main.c        ****         		{
+ 1602               	.LM153:
+ 1603 05a2 8081      		ld r24,Z
+ 1604 05a4 8435      		cpi r24,lo8(84)
+ 1605 05a6 01F0      		breq .+2
+ 1606 05a8 00C0      		rjmp .L100
+ 673:main.c        ****         		{
+ 1608               	.LM154:
+ 1609 05aa 8181      		ldd r24,Z+1
+ 1610 05ac 8534      		cpi r24,lo8(69)
+ 1611 05ae 01F0      		breq .+2
+ 1612 05b0 00C0      		rjmp .L100
+ 673:main.c        ****         		{
+ 1614               	.LM155:
+ 1615 05b2 8281      		ldd r24,Z+2
+ 1616 05b4 8335      		cpi r24,lo8(83)
+ 1617 05b6 01F0      		breq .+2
+ 1618 05b8 00C0      		rjmp .L100
+ 673:main.c        ****         		{
+ 1620               	.LM156:
+ 1621 05ba 8381      		ldd r24,Z+3
+ 1622 05bc 8435      		cpi r24,lo8(84)
+ 1623 05be 01F0      		breq .+2
+ 1624 05c0 00C0      		rjmp .L100
+ 673:main.c        ****         		{
+ 1626               	.LM157:
+ 1627 05c2 8481      		ldd r24,Z+4
+ 1628 05c4 8A33      		cpi r24,lo8(58)
+ 1629 05c6 01F0      		breq .+2
+ 1630 05c8 00C0      		rjmp .L100
+ 675:main.c        ****         		}
+ 1632               	.LM158:
+ 1633 05ca 81E0      		ldi r24,lo8(1)
+ 1634 05cc 8093 0000 		sts peer_data+151,r24
+ 1635 05d0 00C0      		rjmp .L100
+ 1636               	.L106:
+ 682:main.c        ****         	{
+ 1638               	.LM159:
+ 1639 05d2 8823      		tst r24
+ 1640 05d4 01F0      		breq .L118
+ 684:main.c        ****         	   nrk_time_get(&(peer_data.transitionTime));
+ 1642               	.LM160:
+ 1643 05d6 80E0      		ldi r24,lo8(__c.3825)
+ 1644 05d8 90E0      		ldi r25,hi8(__c.3825)
+ 1645 05da 0E94 0000 		call nrk_kprintf
+ 685:main.c        ****         	}
+ 1647               	.LM161:
+ 1648 05de 80E0      		ldi r24,lo8(peer_data+135)
+ 1649 05e0 90E0      		ldi r25,hi8(peer_data+135)
+ 1650 05e2 0E94 0000 		call nrk_time_get
+ 1651               	.L118:
+ 688:main.c        **** 		nrk_led_set(GREEN_LED);
+ 1653               	.LM162:
+ 1654 05e6 83E0      		ldi r24,lo8(3)
+ 1655 05e8 90E0      		ldi r25,0
+ 1656 05ea 0E94 0000 		call nrk_led_set
+ 689:main.c        **** 		nrk_led_clr(ORANGE_LED);
+ 1658               	.LM163:
+ 1659 05ee 81E0      		ldi r24,lo8(1)
+ 1660 05f0 90E0      		ldi r25,0
+ 1661 05f2 0E94 0000 		call nrk_led_set
+ 690:main.c        ****         	nrk_led_clr(RED_LED);
+ 1663               	.LM164:
+ 1664 05f6 82E0      		ldi r24,lo8(2)
+ 1665 05f8 90E0      		ldi r25,0
+ 1666 05fa 0E94 0000 		call nrk_led_clr
+ 691:main.c        ****         	// Let the peer sending test messages know that I am there by sending ACK messages with my
+ 1668               	.LM165:
+ 1669 05fe 80E0      		ldi r24,0
+ 1670 0600 90E0      		ldi r25,0
+ 1671 0602 0E94 0000 		call nrk_led_clr
+ 693:main.c        ****         	peer_sendMessage();
+ 1673               	.LM166:
+ 1674 0606 1F92      		push __zero_reg__
+ 1675 0608 1F92      		push __zero_reg__
+ 1676 060a 80E0      		ldi r24,lo8(.LC5)
+ 1677 060c 90E0      		ldi r25,hi8(.LC5)
+ 1678 060e 9F93      		push r25
+ 1679 0610 8F93      		push r24
+ 1680 0612 80E0      		ldi r24,lo8(peer_data+9)
+ 1681 0614 90E0      		ldi r25,hi8(peer_data+9)
+ 1682 0616 9F93      		push r25
+ 1683 0618 8F93      		push r24
+ 1684 061a 0E94 0000 		call sprintf
+ 694:main.c        **** 
+ 1686               	.LM167:
+ 1687 061e 0E94 0000 		call peer_sendMessage
+ 696:main.c        ****         	{
+ 1689               	.LM168:
+ 1690 0622 0F90      		pop __tmp_reg__
+ 1691 0624 0F90      		pop __tmp_reg__
+ 1692 0626 0F90      		pop __tmp_reg__
+ 1693 0628 0F90      		pop __tmp_reg__
+ 1694 062a 0F90      		pop __tmp_reg__
+ 1695 062c 0F90      		pop __tmp_reg__
+ 1696 062e 8091 0000 		lds r24,receivedMessage
+ 1697 0632 8823      		tst r24
+ 1698 0634 01F4      		brne .+2
+ 1699 0636 00C0      		rjmp .L100
+ 699:main.c        ****         		{
+ 1701               	.LM169:
+ 1702 0638 8091 0000 		lds r24,peer_data+125
+ 1703 063c 8630      		cpi r24,lo8(6)
+ 1704 063e 00F4      		brsh .+2
+ 1705 0640 00C0      		rjmp .L100
+ 699:main.c        ****         		{
+ 1707               	.LM170:
+ 1708 0642 8091 0000 		lds r24,0
+ 1709 0646 8335      		cpi r24,lo8(83)
+ 1710 0648 01F0      		breq .+2
+ 1711 064a 00C0      		rjmp .L100
+ 699:main.c        ****         		{
+ 1713               	.LM171:
+ 1714 064c 8091 0100 		lds r24,1
+ 1715 0650 8534      		cpi r24,lo8(69)
+ 1716 0652 01F0      		breq .+2
+ 1717 0654 00C0      		rjmp .L100
+ 699:main.c        ****         		{
+ 1719               	.LM172:
+ 1720 0656 8091 0200 		lds r24,2
+ 1721 065a 8534      		cpi r24,lo8(69)
+ 1722 065c 01F0      		breq .+2
+ 1723 065e 00C0      		rjmp .L100
+ 699:main.c        ****         		{
+ 1725               	.LM173:
+ 1726 0660 8091 0300 		lds r24,3
+ 1727 0664 8E34      		cpi r24,lo8(78)
+ 1728 0666 01F0      		breq .+2
+ 1729 0668 00C0      		rjmp .L100
+ 699:main.c        ****         		{
+ 1731               	.LM174:
+ 1732 066a 8091 0400 		lds r24,4
+ 1733 066e 8A33      		cpi r24,lo8(58)
+ 1734 0670 01F0      		breq .+2
+ 1735 0672 00C0      		rjmp .L100
+ 702:main.c        **** 
+ 1737               	.LM175:
+ 1738 0674 85E0      		ldi r24,lo8(5)
+ 1739 0676 90E0      		ldi r25,0
+ 1740 0678 0E94 0000 		call atoi
+ 704:main.c        ****         			{
+ 1742               	.LM176:
+ 1743 067c 892B      		or r24,r25
+ 1744 067e 01F0      		breq .+2
+ 1745 0680 00C0      		rjmp .L100
+ 706:main.c        ****         			}
+ 1747               	.LM177:
+ 1748 0682 81E0      		ldi r24,lo8(1)
+ 1749 0684 8093 0000 		sts peer_data+152,r24
+ 1750 0688 00C0      		rjmp .L100
+ 1751               	.L107:
+ 714:main.c        ****         	{
+ 1753               	.LM178:
+ 1754 068a 8823      		tst r24
+ 1755 068c 01F0      		breq .L119
+ 716:main.c        ****         	}
+ 1757               	.LM179:
+ 1758 068e 80E0      		ldi r24,lo8(__c.3828)
+ 1759 0690 90E0      		ldi r25,hi8(__c.3828)
+ 1760 0692 0E94 0000 		call nrk_kprintf
+ 1761               	.L119:
+ 719:main.c        **** 		nrk_led_clr(GREEN_LED);
+ 1763               	.LM180:
+ 1764 0696 83E0      		ldi r24,lo8(3)
+ 1765 0698 90E0      		ldi r25,0
+ 1766 069a 0E94 0000 		call nrk_led_set
+ 720:main.c        **** 		nrk_led_clr(ORANGE_LED);
+ 1768               	.LM181:
+ 1769 069e 81E0      		ldi r24,lo8(1)
+ 1770 06a0 90E0      		ldi r25,0
+ 1771 06a2 0E94 0000 		call nrk_led_clr
+ 721:main.c        ****         	nrk_led_set(RED_LED);
+ 1773               	.LM182:
+ 1774 06a6 82E0      		ldi r24,lo8(2)
+ 1775 06a8 90E0      		ldi r25,0
+ 1776 06aa 0E94 0000 		call nrk_led_clr
+ 722:main.c        ****         	// at this point, this node will be called by the gateway as CTS in the near future, so 
+ 1778               	.LM183:
+ 1779 06ae 80E0      		ldi r24,0
+ 1780 06b0 90E0      		ldi r25,0
+ 1781 06b2 0E94 0000 		call nrk_led_set
+ 726:main.c        ****         	{
+ 1783               	.LM184:
+ 1784 06b6 8091 0000 		lds r24,receivedMessage
+ 1785 06ba 8823      		tst r24
+ 1786 06bc 01F4      		brne .+2
+ 1787 06be 00C0      		rjmp .L100
+ 729:main.c        ****         		{
+ 1789               	.LM185:
+ 1790 06c0 8091 0000 		lds r24,peer_data+125
+ 1791 06c4 8530      		cpi r24,lo8(5)
+ 1792 06c6 00F4      		brsh .+2
+ 1793 06c8 00C0      		rjmp .L100
+ 729:main.c        ****         		{
+ 1795               	.LM186:
+ 1796 06ca 8091 0000 		lds r24,0
+ 1797 06ce 8334      		cpi r24,lo8(67)
+ 1798 06d0 01F0      		breq .+2
+ 1799 06d2 00C0      		rjmp .L100
+ 729:main.c        ****         		{
+ 1801               	.LM187:
+ 1802 06d4 8091 0100 		lds r24,1
+ 1803 06d8 8435      		cpi r24,lo8(84)
+ 1804 06da 01F0      		breq .+2
+ 1805 06dc 00C0      		rjmp .L100
+ 729:main.c        ****         		{
+ 1807               	.LM188:
+ 1808 06de 8091 0200 		lds r24,2
+ 1809 06e2 8335      		cpi r24,lo8(83)
+ 1810 06e4 01F0      		breq .+2
+ 1811 06e6 00C0      		rjmp .L100
+ 729:main.c        ****         		{
+ 1813               	.LM189:
+ 1814 06e8 8091 0300 		lds r24,3
+ 1815 06ec 8A33      		cpi r24,lo8(58)
+ 1816 06ee 01F0      		breq .+2
+ 1817 06f0 00C0      		rjmp .L100
+ 732:main.c        **** 
+ 1819               	.LM190:
+ 1820 06f2 84E0      		ldi r24,lo8(4)
+ 1821 06f4 90E0      		ldi r25,0
+ 1822 06f6 0E94 0000 		call atoi
+ 734:main.c        ****         			{
+ 1824               	.LM191:
+ 1825 06fa 892B      		or r24,r25
+ 1826 06fc 01F0      		breq .+2
+ 1827 06fe 00C0      		rjmp .L100
+ 736:main.c        ****         			}
+ 1829               	.LM192:
+ 1830 0700 81E0      		ldi r24,lo8(1)
+ 1831 0702 8093 0000 		sts peer_data+153,r24
+ 1832 0706 00C0      		rjmp .L100
+ 1833               	.L108:
+ 744:main.c        ****         	{
+ 1835               	.LM193:
+ 1836 0708 8823      		tst r24
+ 1837 070a 01F0      		breq .L120
+ 746:main.c        **** 		    	nrk_led_clr(RED_LED);
+ 1839               	.LM194:
+ 1840 070c 80E0      		ldi r24,lo8(__c.3831)
+ 1841 070e 90E0      		ldi r25,hi8(__c.3831)
+ 1842 0710 0E94 0000 		call nrk_kprintf
+ 747:main.c        **** 		    	nrk_led_clr(BLUE_LED);
+ 1844               	.LM195:
+ 1845 0714 80E0      		ldi r24,0
+ 1846 0716 90E0      		ldi r25,0
+ 1847 0718 0E94 0000 		call nrk_led_clr
+ 748:main.c        **** 		    	nrk_led_set(GREEN_LED);
+ 1849               	.LM196:
+ 1850 071c 83E0      		ldi r24,lo8(3)
+ 1851 071e 90E0      		ldi r25,0
+ 1852 0720 0E94 0000 		call nrk_led_clr
+ 749:main.c        **** 			nrk_led_set(ORANGE_LED);
+ 1854               	.LM197:
+ 1855 0724 81E0      		ldi r24,lo8(1)
+ 1856 0726 90E0      		ldi r25,0
+ 1857 0728 0E94 0000 		call nrk_led_set
+ 750:main.c        ****         	}
+ 1859               	.LM198:
+ 1860 072c 82E0      		ldi r24,lo8(2)
+ 1861 072e 90E0      		ldi r25,0
+ 1862 0730 0E94 0000 		call nrk_led_set
+ 1863               	.L120:
+ 754:main.c        **** 		strcat(peer_data.tx_buf, peer_data.done_message);
+ 1865               	.LM199:
+ 1866 0734 1F92      		push __zero_reg__
+ 1867 0736 1F92      		push __zero_reg__
+ 1868 0738 80E0      		ldi r24,lo8(.LC6)
+ 1869 073a 90E0      		ldi r25,hi8(.LC6)
+ 1870 073c 9F93      		push r25
+ 1871 073e 8F93      		push r24
+ 1872 0740 80E0      		ldi r24,lo8(peer_data+9)
+ 1873 0742 90E0      		ldi r25,hi8(peer_data+9)
+ 1874 0744 9F93      		push r25
+ 1875 0746 8F93      		push r24
+ 1876 0748 0E94 0000 		call sprintf
+ 755:main.c        **** 
+ 1878               	.LM200:
+ 1879 074c 60E0      		ldi r22,lo8(peer_data+157)
+ 1880 074e 70E0      		ldi r23,hi8(peer_data+157)
+ 1881 0750 80E0      		ldi r24,lo8(peer_data+9)
+ 1882 0752 90E0      		ldi r25,hi8(peer_data+9)
+ 1883 0754 0E94 0000 		call strcat
+ 757:main.c        **** 
+ 1885               	.LM201:
+ 1886 0758 0E94 0000 		call peer_sendMessage
+ 759:main.c        ****         	{
+ 1888               	.LM202:
+ 1889 075c 0F90      		pop __tmp_reg__
+ 1890 075e 0F90      		pop __tmp_reg__
+ 1891 0760 0F90      		pop __tmp_reg__
+ 1892 0762 0F90      		pop __tmp_reg__
+ 1893 0764 0F90      		pop __tmp_reg__
+ 1894 0766 0F90      		pop __tmp_reg__
+ 1895 0768 8091 0000 		lds r24,receivedMessage
+ 1896 076c 8823      		tst r24
+ 1897 076e 01F0      		breq .L100
+ 1898               	.LBB36:
+ 761:main.c        **** 
+ 1900               	.LM203:
+ 1901 0770 E091 0000 		lds r30,peer_data+7
+ 1902 0774 F091 0000 		lds r31,peer_data+7+1
+ 763:main.c        ****         		{
+ 1904               	.LM204:
+ 1905 0778 8091 0000 		lds r24,peer_data+125
+ 1906 077c 8530      		cpi r24,lo8(5)
+ 1907 077e 00F0      		brlo .L100
+ 763:main.c        ****         		{
+ 1909               	.LM205:
+ 1910 0780 8081      		ld r24,Z
+ 1911 0782 8134      		cpi r24,lo8(65)
+ 1912 0784 01F4      		brne .L100
+ 763:main.c        ****         		{
+ 1914               	.LM206:
+ 1915 0786 8181      		ldd r24,Z+1
+ 1916 0788 8334      		cpi r24,lo8(67)
+ 1917 078a 01F4      		brne .L100
+ 763:main.c        ****         		{
+ 1919               	.LM207:
+ 1920 078c 8281      		ldd r24,Z+2
+ 1921 078e 8B34      		cpi r24,lo8(75)
+ 1922 0790 01F4      		brne .L100
+ 763:main.c        ****         		{
+ 1924               	.LM208:
+ 1925 0792 8381      		ldd r24,Z+3
+ 1926 0794 8A33      		cpi r24,lo8(58)
+ 1927 0796 01F4      		brne .L100
+ 767:main.c        ****         			{
+ 1929               	.LM209:
+ 1930 0798 CF01      		movw r24,r30
+ 1931 079a 0496      		adiw r24,4
+ 1932 079c 0E94 0000 		call atoi
+ 1933 07a0 892B      		or r24,r25
+ 1934 07a2 01F4      		brne .L100
+ 769:main.c        ****         			}
+ 1936               	.LM210:
+ 1937 07a4 81E0      		ldi r24,lo8(1)
+ 1938 07a6 8093 0000 		sts peer_data+154,r24
+ 1939 07aa 00C0      		rjmp .L100
+ 1940               	.L109:
+ 1941               	.LBE36:
+ 1943               	.LM211:
+ 1944 07ac 8823      		tst r24
+ 1945 07ae 01F0      		breq .L100
+ 778:main.c        ****         	{
+ 779:main.c        ****         		nrk_kprintf (PSTR ("--> Waiting to forward any neighbor information from other nodes\r\n"
+ 1947               	.LM212:
+ 1948 07b0 80E0      		ldi r24,lo8(__c.3835)
+ 1949 07b2 90E0      		ldi r25,hi8(__c.3835)
+ 1950 07b4 0E94 0000 		call nrk_kprintf
+ 780:main.c        ****         		nrk_led_set(BLUE_LED);
+ 1952               	.LM213:
+ 1953 07b8 83E0      		ldi r24,lo8(3)
+ 1954 07ba 90E0      		ldi r25,0
+ 1955 07bc 0E94 0000 		call nrk_led_set
+ 781:main.c        ****         		nrk_led_set(RED_LED);
+ 1957               	.LM214:
+ 1958 07c0 80E0      		ldi r24,0
+ 1959 07c2 90E0      		ldi r25,0
+ 1960 07c4 0E94 0000 		call nrk_led_set
+ 782:main.c        ****         		nrk_led_set(GREEN_LED);
+ 1962               	.LM215:
+ 1963 07c8 81E0      		ldi r24,lo8(1)
+ 1964 07ca 90E0      		ldi r25,0
+ 1965 07cc 0E94 0000 		call nrk_led_set
+ 783:main.c        **** 			nrk_led_set(ORANGE_LED);
+ 1967               	.LM216:
+ 1968 07d0 82E0      		ldi r24,lo8(2)
+ 1969 07d2 90E0      		ldi r25,0
+ 1970 07d4 0E94 0000 		call nrk_led_set
+ 1971               	.L100:
+ 1972               	.LBE38:
+ 784:main.c        **** 	
+ 785:main.c        ****         	}
+ 786:main.c        **** 
+ 787:main.c        ****         	// listen to messages from nearby peers and route any DONE messages to the gateway
+ 788:main.c        **** 
+ 789:main.c        **** 	    	break;
+ 790:main.c        **** 
+ 791:main.c        ****         default:
+ 792:main.c        ****             // should never reach here, error
+ 793:main.c        ****              break;
+ 794:main.c        ****     }
+ 795:main.c        **** 
+ 796:main.c        ****     peer_data.presentState = state;
+ 1974               	.LM217:
+ 1975 07d8 F092 0000 		sts peer_data+1,r15
+ 1976               	/* epilogue start */
+ 797:main.c        **** }
+ 1978               	.LM218:
+ 1979 07dc DF91      		pop r29
+ 1980 07de CF91      		pop r28
+ 1981 07e0 1F91      		pop r17
+ 1982 07e2 0F91      		pop r16
+ 1983 07e4 FF90      		pop r15
+ 1984 07e6 EF90      		pop r14
+ 1985 07e8 DF90      		pop r13
+ 1986 07ea CF90      		pop r12
+ 1987 07ec 0895      		ret
+ 1993               	.Lscope15:
+ 1995               		.stabd	78,0,0
+ 1997               	.global	peer_init
+ 1999               	peer_init:
+ 2000               		.stabd	46,0,0
+ 798:main.c        **** 
+ 799:main.c        **** /*****************************************
+ 800:main.c        ****  *              GATEWAY TASK             *
+ 801:main.c        ****  *****************************************/
+ 802:main.c        **** 
+ 803:main.c        **** /**
+ 804:main.c        ****   * Initialize the peer data struct and other variables
+ 805:main.c        ****   */
+ 806:main.c        **** void peer_init(void)
+ 807:main.c        **** {
+ 2002               	.LM219:
+ 2003               	.LFBB16:
+ 2004               	/* prologue: function */
+ 2005               	/* frame size = 0 */
+ 2006               	/* stack size = 0 */
+ 2007               	.L__stack_usage = 0
+ 808:main.c        ****   peer_data.desiredState = STATE_WAIT;
+ 2009               	.LM220:
+ 2010 07ee E0E0      		ldi r30,lo8(peer_data)
+ 2011 07f0 F0E0      		ldi r31,hi8(peer_data)
+ 2012 07f2 1082      		st Z,__zero_reg__
+ 809:main.c        ****   peer_data.presentState = STATE_WAIT;
+ 2014               	.LM221:
+ 2015 07f4 1182      		std Z+1,__zero_reg__
+ 810:main.c        ****   peer_data.stateTransition = false;
+ 2017               	.LM222:
+ 2018 07f6 1282      		std Z+2,__zero_reg__
+ 2019 07f8 0895      		ret
+ 2021               	.Lscope16:
+ 2023               		.stabd	78,0,0
+ 2025               	.global	peer_task
+ 2027               	peer_task:
+ 2028               		.stabd	46,0,0
+ 811:main.c        **** }
+ 812:main.c        **** 
+ 813:main.c        **** void peer_task(void)
+ 814:main.c        **** {
+ 2030               	.LM223:
+ 2031               	.LFBB17:
+ 2032               	/* prologue: function */
+ 2033               	/* frame size = 0 */
+ 2034               	/* stack size = 0 */
+ 2035               	.L__stack_usage = 0
+ 815:main.c        ****     nrk_kprintf (PSTR ("Peer Task started\r\n"));
+ 2037               	.LM224:
+ 2038 07fa 80E0      		ldi r24,lo8(__c.3844)
+ 2039 07fc 90E0      		ldi r25,hi8(__c.3844)
+ 2040 07fe 0E94 0000 		call nrk_kprintf
+ 816:main.c        **** 
+ 817:main.c        ****     peer_init(); // Initialize gateway variables
+ 2042               	.LM225:
+ 2043 0802 0E94 0000 		call peer_init
+ 818:main.c        **** 
+ 819:main.c        ****     // Get the signal for UART RX
+ 820:main.c        ****     uart_rx_signal = nrk_uart_rx_signal_get();
+ 2045               	.LM226:
+ 2046 0806 0E94 0000 		call nrk_uart_rx_signal_get
+ 2047 080a 8093 0000 		sts uart_rx_signal,r24
+ 821:main.c        **** 
+ 822:main.c        ****     // Register task to wait on signal
+ 823:main.c        ****     nrk_signal_register(uart_rx_signal);
+ 2049               	.LM227:
+ 2050 080e 0E94 0000 		call nrk_signal_register
+ 824:main.c        **** 
+ 825:main.c        ****     // init bmac on channel 12 and least power to assist multihop
+ 826:main.c        ****     bmac_init (CHANNEL);
+ 2052               	.LM228:
+ 2053 0812 8CE0      		ldi r24,lo8(12)
+ 2054 0814 0E94 0000 		call bmac_init
+ 827:main.c        ****     bmac_set_rf_power(5);
+ 2056               	.LM229:
+ 2057 0818 85E0      		ldi r24,lo8(5)
+ 2058 081a 0E94 0000 		call bmac_set_rf_power
+ 828:main.c        **** 
+ 829:main.c        ****     // This can be called at anytime before releasing the packet
+ 830:main.c        ****     // if you wish to do a zero-copy buffer switch
+ 831:main.c        ****     bmac_rx_pkt_set_buffer(rx_buf, RF_MAX_PAYLOAD_SIZE);
+ 2060               	.LM230:
+ 2061 081e 64E7      		ldi r22,lo8(116)
+ 2062 0820 80E0      		ldi r24,lo8(rx_buf)
+ 2063 0822 90E0      		ldi r25,hi8(rx_buf)
+ 2064 0824 0E94 0000 		call bmac_rx_pkt_set_buffer
+ 2065               	.L164:
+ 832:main.c        **** 
+ 833:main.c        ****     while(1)
+ 834:main.c        ****     {
+ 835:main.c        **** 
+ 836:main.c        ****         /*
+ 837:main.c        ****          * Below is the main state machine loop
+ 838:main.c        ****          */
+ 839:main.c        **** 
+ 840:main.c        ****         // Grab inputs and do some processing
+ 841:main.c        ****         peer_processData();
+ 2067               	.LM231:
+ 2068 0828 0E94 0000 		call peer_processData
+ 842:main.c        **** 
+ 843:main.c        ****         // See if state transition is necessary
+ 844:main.c        ****         peer_getDesiredState();
+ 2070               	.LM232:
+ 2071 082c 0E94 0000 		call peer_getDesiredState
+ 845:main.c        **** 
+ 846:main.c        ****         // Set variable indicating state transition happened
+ 847:main.c        ****         peer_data.stateTransition = (peer_data.presentState != peer_data.desiredState);
+ 2073               	.LM233:
+ 2074 0830 81E0      		ldi r24,lo8(1)
+ 2075 0832 2091 0000 		lds r18,peer_data+1
+ 2076 0836 9091 0000 		lds r25,peer_data
+ 2077 083a 2913      		cpse r18,r25
+ 2078 083c 00C0      		rjmp .L163
+ 2079 083e 80E0      		ldi r24,0
+ 2080               	.L163:
+ 2081 0840 8093 0000 		sts peer_data+2,r24
+ 848:main.c        **** 
+ 849:main.c        ****         // Perform transition and state related outputs
+ 850:main.c        ****         peer_setCurrentState();
+ 2083               	.LM234:
+ 2084 0844 0E94 0000 		call peer_setCurrentState
+ 851:main.c        **** 
+ 852:main.c        ****         nrk_wait_until_next_period();
+ 2086               	.LM235:
+ 2087 0848 0E94 0000 		call nrk_wait_until_next_period
+ 853:main.c        ****     }
+ 2089               	.LM236:
+ 2090 084c 00C0      		rjmp .L164
+ 2092               	.Lscope17:
+ 2094               		.stabd	78,0,0
+ 2095               		.section	.rodata.str1.1
+ 2096               	.LC7:
+ 2097 0044 4372 6561 		.string	"Create done\r\n"
+ 2097      7465 2064 
+ 2097      6F6E 650D 
+ 2097      0A00 
+ 2098               		.text
+ 2100               	.global	nrk_create_taskset
+ 2102               	nrk_create_taskset:
+ 2103               		.stabd	46,0,0
+ 854:main.c        **** 
+ 855:main.c        **** }
+ 856:main.c        **** 
+ 857:main.c        **** /*****************************************
+ 858:main.c        ****  *             MAIN FUNCTION             *
+ 859:main.c        ****  *****************************************/
+ 860:main.c        **** 
+ 861:main.c        **** /**
+ 862:main.c        ****   * Creates a nrk gateway task
+ 863:main.c        ****   */
+ 864:main.c        **** void nrk_create_taskset ()
+ 865:main.c        **** {
+ 2105               	.LM237:
+ 2106               	.LFBB18:
+ 2107 084e CF93      		push r28
+ 2108 0850 DF93      		push r29
+ 2109               	/* prologue: function */
+ 2110               	/* frame size = 0 */
+ 2111               	/* stack size = 2 */
+ 2112               	.L__stack_usage = 2
+ 866:main.c        ****     PEER_TASK.task = peer_task;
+ 2114               	.LM238:
+ 2115 0852 C0E0      		ldi r28,lo8(PEER_TASK)
+ 2116 0854 D0E0      		ldi r29,hi8(PEER_TASK)
+ 2117 0856 80E0      		ldi r24,lo8(gs(peer_task))
+ 2118 0858 90E0      		ldi r25,hi8(gs(peer_task))
+ 2119 085a 9E83      		std Y+6,r25
+ 2120 085c 8D83      		std Y+5,r24
+ 867:main.c        ****     nrk_task_set_stk( &PEER_TASK, peer_task_stack, NRK_APP_STACKSIZE);
+ 2122               	.LM239:
+ 2123 085e 40E0      		ldi r20,0
+ 2124 0860 52E0      		ldi r21,lo8(2)
+ 2125 0862 60E0      		ldi r22,lo8(peer_task_stack)
+ 2126 0864 70E0      		ldi r23,hi8(peer_task_stack)
+ 2127 0866 CE01      		movw r24,r28
+ 2128 0868 0E94 0000 		call nrk_task_set_stk
+ 868:main.c        ****     PEER_TASK.prio = 2;
+ 2130               	.LM240:
+ 2131 086c 82E0      		ldi r24,lo8(2)
+ 2132 086e 8887      		std Y+8,r24
+ 869:main.c        ****     PEER_TASK.FirstActivation = TRUE;
+ 2134               	.LM241:
+ 2135 0870 81E0      		ldi r24,lo8(1)
+ 2136 0872 8F83      		std Y+7,r24
+ 870:main.c        ****     PEER_TASK.Type = BASIC_TASK;
+ 2138               	.LM242:
+ 2139 0874 8987      		std Y+9,r24
+ 871:main.c        ****     PEER_TASK.SchType = PREEMPTIVE;
+ 2141               	.LM243:
+ 2142 0876 8A87      		std Y+10,r24
+ 872:main.c        ****     PEER_TASK.period.secs = 0;
+ 2144               	.LM244:
+ 2145 0878 1B86      		std Y+11,__zero_reg__
+ 2146 087a 1C86      		std Y+12,__zero_reg__
+ 2147 087c 1D86      		std Y+13,__zero_reg__
+ 2148 087e 1E86      		std Y+14,__zero_reg__
+ 873:main.c        ****     PEER_TASK.period.nano_secs = 500000000;
+ 2150               	.LM245:
+ 2151 0880 80E0      		ldi r24,0
+ 2152 0882 95E6      		ldi r25,lo8(101)
+ 2153 0884 ADEC      		ldi r26,lo8(-51)
+ 2154 0886 BDE1      		ldi r27,lo8(29)
+ 2155 0888 8F87      		std Y+15,r24
+ 2156 088a 988B      		std Y+16,r25
+ 2157 088c A98B      		std Y+17,r26
+ 2158 088e BA8B      		std Y+18,r27
+ 874:main.c        ****     PEER_TASK.cpu_reserve.secs = 1;
+ 2160               	.LM246:
+ 2161 0890 81E0      		ldi r24,lo8(1)
+ 2162 0892 90E0      		ldi r25,0
+ 2163 0894 A0E0      		ldi r26,0
+ 2164 0896 B0E0      		ldi r27,0
+ 2165 0898 8B8B      		std Y+19,r24
+ 2166 089a 9C8B      		std Y+20,r25
+ 2167 089c AD8B      		std Y+21,r26
+ 2168 089e BE8B      		std Y+22,r27
+ 875:main.c        ****     PEER_TASK.cpu_reserve.nano_secs = 0;
+ 2170               	.LM247:
+ 2171 08a0 1F8A      		std Y+23,__zero_reg__
+ 2172 08a2 188E      		std Y+24,__zero_reg__
+ 2173 08a4 198E      		std Y+25,__zero_reg__
+ 2174 08a6 1A8E      		std Y+26,__zero_reg__
+ 876:main.c        ****     PEER_TASK.offset.secs = 0;
+ 2176               	.LM248:
+ 2177 08a8 1B8E      		std Y+27,__zero_reg__
+ 2178 08aa 1C8E      		std Y+28,__zero_reg__
+ 2179 08ac 1D8E      		std Y+29,__zero_reg__
+ 2180 08ae 1E8E      		std Y+30,__zero_reg__
+ 877:main.c        ****     PEER_TASK.offset.nano_secs = 0;
+ 2182               	.LM249:
+ 2183 08b0 1F8E      		std Y+31,__zero_reg__
+ 2184 08b2 18A2      		std Y+32,__zero_reg__
+ 2185 08b4 19A2      		std Y+33,__zero_reg__
+ 2186 08b6 1AA2      		std Y+34,__zero_reg__
+ 878:main.c        ****     nrk_activate_task (&PEER_TASK);
+ 2188               	.LM250:
+ 2189 08b8 CE01      		movw r24,r28
+ 2190 08ba 0E94 0000 		call nrk_activate_task
+ 879:main.c        ****     
+ 880:main.c        ****     nrk_kprintf ("Create done\r\n");
+ 2192               	.LM251:
+ 2193 08be 80E0      		ldi r24,lo8(.LC7)
+ 2194 08c0 90E0      		ldi r25,hi8(.LC7)
+ 2195               	/* epilogue start */
+ 881:main.c        **** }
+ 2197               	.LM252:
+ 2198 08c2 DF91      		pop r29
+ 2199 08c4 CF91      		pop r28
+ 880:main.c        **** }
+ 2201               	.LM253:
+ 2202 08c6 0C94 0000 		jmp nrk_kprintf
+ 2204               	.Lscope18:
+ 2206               		.stabd	78,0,0
+ 2207               		.section	.text.startup,"ax",@progbits
+ 2209               	.global	main
+ 2211               	main:
+ 2212               		.stabd	46,0,0
+ 882:main.c        **** 
+ 883:main.c        **** int main ()
+ 884:main.c        **** {
+ 2214               	.LM254:
+ 2215               	.LFBB19:
+ 2216               	/* prologue: function */
+ 2217               	/* frame size = 0 */
+ 2218               	/* stack size = 0 */
+ 2219               	.L__stack_usage = 0
+ 885:main.c        ****     nrk_setup_ports ();
+ 2221               	.LM255:
+ 2222 0000 0E94 0000 		call nrk_setup_ports
+ 886:main.c        ****     nrk_setup_uart (UART_BAUDRATE_115K2);
+ 2224               	.LM256:
+ 2225 0004 80E1      		ldi r24,lo8(16)
+ 2226 0006 90E0      		ldi r25,0
+ 2227 0008 0E94 0000 		call nrk_setup_uart
+ 887:main.c        ****     
+ 888:main.c        ****     nrk_init ();
+ 2229               	.LM257:
+ 2230 000c 0E94 0000 		call nrk_init
+ 889:main.c        ****     
+ 890:main.c        ****     nrk_led_clr (0);
+ 2232               	.LM258:
+ 2233 0010 80E0      		ldi r24,0
+ 2234 0012 90E0      		ldi r25,0
+ 2235 0014 0E94 0000 		call nrk_led_clr
+ 891:main.c        ****     nrk_led_clr (1);
+ 2237               	.LM259:
+ 2238 0018 81E0      		ldi r24,lo8(1)
+ 2239 001a 90E0      		ldi r25,0
+ 2240 001c 0E94 0000 		call nrk_led_clr
+ 892:main.c        ****     nrk_led_clr (2);
+ 2242               	.LM260:
+ 2243 0020 82E0      		ldi r24,lo8(2)
+ 2244 0022 90E0      		ldi r25,0
+ 2245 0024 0E94 0000 		call nrk_led_clr
+ 893:main.c        ****     nrk_led_clr (3);
+ 2247               	.LM261:
+ 2248 0028 83E0      		ldi r24,lo8(3)
+ 2249 002a 90E0      		ldi r25,0
+ 2250 002c 0E94 0000 		call nrk_led_clr
+ 894:main.c        ****     
+ 895:main.c        ****     nrk_time_set (0, 0);
+ 2252               	.LM262:
+ 2253 0030 20E0      		ldi r18,0
+ 2254 0032 30E0      		ldi r19,0
+ 2255 0034 A901      		movw r20,r18
+ 2256 0036 60E0      		ldi r22,0
+ 2257 0038 70E0      		ldi r23,0
+ 2258 003a CB01      		movw r24,r22
+ 2259 003c 0E94 0000 		call nrk_time_set
+ 896:main.c        ****     
+ 897:main.c        ****     bmac_task_config ();
+ 2261               	.LM263:
+ 2262 0040 0E94 0000 		call bmac_task_config
+ 898:main.c        ****     
+ 899:main.c        ****     nrk_create_taskset ();
+ 2264               	.LM264:
+ 2265 0044 0E94 0000 		call nrk_create_taskset
+ 900:main.c        ****     nrk_start ();
+ 2267               	.LM265:
+ 2268 0048 0E94 0000 		call nrk_start
+ 901:main.c        ****     
+ 902:main.c        ****     return 0;
+ 903:main.c        **** }
+ 2270               	.LM266:
+ 2271 004c 80E0      		ldi r24,0
+ 2272 004e 90E0      		ldi r25,0
+ 2273 0050 0895      		ret
+ 2275               	.Lscope19:
+ 2277               		.stabd	78,0,0
+ 2278               		.section	.progmem.data,"a",@progbits
+ 2281               	__c.3844:
+ 2282 0000 5065 6572 		.string	"Peer Task started\r\n"
+ 2282      2054 6173 
+ 2282      6B20 7374 
+ 2282      6172 7465 
+ 2282      640D 0A00 
+ 2285               	__c.3835:
+ 2286 0014 2D2D 3E20 		.string	"--> Waiting to forward any neighbor information from other nodes\r\n"
+ 2286      5761 6974 
+ 2286      696E 6720 
+ 2286      746F 2066 
+ 2286      6F72 7761 
+ 2289               	__c.3831:
+ 2290 0057 2D2D 3E20 		.string	"--> Done receiving ACK messages from nearby peers, sending results to GTW\r\n"
+ 2290      446F 6E65 
+ 2290      2072 6563 
+ 2290      6569 7669 
+ 2290      6E67 2041 
+ 2293               	__c.3828:
+ 2294 00a3 2D2D 3E20 		.string	"--> Received a SEEN command from nearby peer, waiting for CTS from GTW\r\n"
+ 2294      5265 6365 
+ 2294      6976 6564 
+ 2294      2061 2053 
+ 2294      4545 4E20 
+ 2297               	__c.3825:
+ 2298 00ec 2D2D 3E20 		.string	"--> Saw a test command, attempting to send acknoledgement\r\n"
+ 2298      5361 7720 
+ 2298      6120 7465 
+ 2298      7374 2063 
+ 2298      6F6D 6D61 
+ 2301               	__c.3821:
+ 2302 0128 2D2D 3E20 		.string	"--> Listening for TEST commands from a nearby node \r\n"
+ 2302      4C69 7374 
+ 2302      656E 696E 
+ 2302      6720 666F 
+ 2302      7220 5445 
+ 2305               	__c.3817:
+ 2306 015e 2D2D 3E20 		.string	"--> Received CTS command from GTW. Testing to see if nodes are in vicinity.\r\n"
+ 2306      5265 6365 
+ 2306      6976 6564 
+ 2306      2043 5453 
+ 2306      2063 6F6D 
+ 2309               	__c.3814:
+ 2310 01ac 2D2D 3E20 		.string	"--> Received routing command, starting to send RTS messages\r\n"
+ 2310      5265 6365 
+ 2310      6976 6564 
+ 2310      2072 6F75 
+ 2310      7469 6E67 
+ 2313               	__c.3810:
+ 2314 01ea 2D2D 3E20 		.string	"--> Node just turned on, waiting for route command\r\n"
+ 2314      4E6F 6465 
+ 2314      206A 7573 
+ 2314      7420 7475 
+ 2314      726E 6564 
+ 2317               	__c.3741:
+ 2318 021f 436F 756C 		.string	"Could not Transmit!\r\n"
+ 2318      6420 6E6F 
+ 2318      7420 5472 
+ 2318      616E 736D 
+ 2318      6974 210D 
+ 2319               		.comm	peer_data,277,1
+ 2320               		.comm	uart_rx_signal,1,1
+ 2321               		.comm	receivedMessage,1,1
+ 2322               		.comm	end_time_receive,8,1
+ 2323               		.comm	start_time_receive,8,1
+ 2324               		.comm	rx_buf,116,1
+ 2325               		.comm	peer_buf,116,1
+ 2326               		.comm	peer_task_stack,512,1
+ 2327               		.comm	PEER_TASK,35,1
+ 2328               		.comm	app_timer0_prescale,1,1
+ 2329               		.comm	app_timer0_callback,2,1
+ 2330               		.comm	_nrk_time_trigger,1,1
+ 2331               		.comm	_nrk_prev_timer_val,1,1
+ 2332               		.comm	error_num,1,1
+ 2333               		.comm	error_task,1,1
+ 2334               		.comm	bmac_rfTxInfo,7,1
+ 2335               		.comm	bmac_rfRxInfo,12,1
+ 2336               		.comm	bmac_enable_signal,1,1
+ 2337               		.comm	bmac_tx_pkt_done_signal,1,1
+ 2338               		.comm	bmac_rx_pkt_signal,1,1
+ 2339               		.comm	nrk_kernel_stk_ptr,2,1
+ 2340               		.comm	nrk_idle_task_stk,256,1
+ 2341               		.comm	_nrk_signal_list,4,1
+ 2365               		.text
+ 2367               	.Letext0:
+ 2368               		.ident	"GCC: (GNU) 4.9.1"
+ 2369               	.global __do_copy_data
+ 2370               	.global __do_clear_bss
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 main.c
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2      *ABS*:000000000000003e __SP_H__
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:3      *ABS*:000000000000003d __SP_L__
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:4      *ABS*:000000000000003f __SREG__
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:5      *ABS*:000000000000003b __RAMPZ__
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:6      *ABS*:0000000000000000 __tmp_reg__
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:7      *ABS*:0000000000000001 __zero_reg__
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:346    .text:0000000000000000 peer_receiveMessage
+                            *COM*:0000000000000115 peer_data
+                            *COM*:0000000000000008 end_time_receive
+                            *COM*:0000000000000008 start_time_receive
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:518    .text:0000000000000124 peer_sendMessage
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2317   .progmem.data:000000000000021f __c.3741
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:596    .text:0000000000000170 peer_allowTransitionWaitToRTS
+                            *COM*:0000000000000001 receivedMessage
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:641    .text:0000000000000194 peer_allowTransitionRTSToTest
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:711    .text:00000000000001d8 peer_allowTransitionRTSToListening
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:781    .text:000000000000021c peer_allowTransitionTestToDone
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:827    .text:000000000000025c peer_allowTransitionListeningToSendingAcks
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:865    .text:0000000000000270 peer_allowTransitionSendingAcksToGotAck
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:924    .text:00000000000002bc peer_allowTransitionGotAckToTest
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:944    .text:00000000000002c2 peer_allowTransitionDoneToForwarding
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:964    .text:00000000000002c8 peer_allowTransitionListeningToRTS
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:1009   .text:00000000000002ec peer_allowTransitionSendingAcksToRTS
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:1072   .text:0000000000000328 peer_processData
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:1093   .text:0000000000000332 peer_getDesiredState
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:1253   .text:00000000000003c2 peer_setCurrentState
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2313   .progmem.data:00000000000001ea __c.3810
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2309   .progmem.data:00000000000001ac __c.3814
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2305   .progmem.data:000000000000015e __c.3817
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2301   .progmem.data:0000000000000128 __c.3821
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2297   .progmem.data:00000000000000ec __c.3825
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2293   .progmem.data:00000000000000a3 __c.3828
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2289   .progmem.data:0000000000000057 __c.3831
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2285   .progmem.data:0000000000000014 __c.3835
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:1999   .text:00000000000007ee peer_init
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2027   .text:00000000000007fa peer_task
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2281   .progmem.data:0000000000000000 __c.3844
+                            *COM*:0000000000000001 uart_rx_signal
+                            *COM*:0000000000000074 rx_buf
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2102   .text:000000000000084e nrk_create_taskset
+                            *COM*:0000000000000023 PEER_TASK
+                            *COM*:0000000000000200 peer_task_stack
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//cczA85Ih.s:2211   .text.startup:0000000000000000 main
+                            *COM*:0000000000000074 peer_buf
+                            *COM*:0000000000000001 app_timer0_prescale
+                            *COM*:0000000000000002 app_timer0_callback
+                            *COM*:0000000000000001 _nrk_time_trigger
+                            *COM*:0000000000000001 _nrk_prev_timer_val
+                            *COM*:0000000000000001 error_num
+                            *COM*:0000000000000001 error_task
+                            *COM*:0000000000000007 bmac_rfTxInfo
+                            *COM*:000000000000000c bmac_rfRxInfo
+                            *COM*:0000000000000001 bmac_enable_signal
+                            *COM*:0000000000000001 bmac_tx_pkt_done_signal
+                            *COM*:0000000000000001 bmac_rx_pkt_signal
+                            *COM*:0000000000000002 nrk_kernel_stk_ptr
+                            *COM*:0000000000000100 nrk_idle_task_stk
+                            *COM*:0000000000000004 _nrk_signal_list
+
+UNDEFINED SYMBOLS
+bmac_rx_pkt_ready
+bmac_rx_pkt_get
+bmac_rx_pkt_release
+nrk_time_get
+__muluhisi3
+__udivmodsi4
+bmac_tx_pkt
+nrk_kprintf
+nrk_led_set
+nrk_led_clr
+strcmp
+atoi
+__tablejump2__
+strcat
+sprintf
+nrk_uart_rx_signal_get
+nrk_signal_register
+bmac_init
+bmac_set_rf_power
+bmac_rx_pkt_set_buffer
+nrk_wait_until_next_period
+nrk_task_set_stk
+nrk_activate_task
+nrk_setup_ports
+nrk_setup_uart
+nrk_init
+nrk_time_set
+bmac_task_config
+nrk_start
+__do_copy_data
+__do_clear_bss

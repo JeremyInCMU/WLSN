@@ -1,0 +1,1739 @@
+   1               		.file	"main.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+  10               		.text
+  11               	.Ltext0:
+ 335               		.section	.rodata.str1.1,"aMS",@progbits,1
+ 336               	.LC0:
+ 337 0000 504F 4C4C 		.string	"POLL: %u"
+ 337      3A20 2575 
+ 337      00
+ 338               	.LC1:
+ 339 0009 4D4F 4C45 		.string	"MOLE: %u"
+ 339      3A20 2575 
+ 339      00
+ 340               	.LC2:
+ 341 0012 7469 6D65 		.string	"time_Tx: %lu"
+ 341      5F54 783A 
+ 341      2025 6C75 
+ 341      00
+ 342               	.LC3:
+ 343 001f 5748 4143 		.string	"WHACKED: %u"
+ 343      4B45 443A 
+ 343      2025 7500 
+ 344               	.LC4:
+ 345 002b 7469 6D65 		.string	"time_rx: %lu\r\n"
+ 345      5F72 783A 
+ 345      2025 6C75 
+ 345      0D0A 00
+ 346               	.LC5:
+ 347 003a 3A00      		.string	":"
+ 348               	.LC6:
+ 349 003c 0A00      		.string	"\n"
+ 350               	.LC7:
+ 351 003e 474F 545F 		.string	"GOT_MOLE: %u"
+ 351      4D4F 4C45 
+ 351      3A20 2575 
+ 351      00
+ 352               	.LC8:
+ 353 004b 474F 545F 		.string	"GOT_WHACKED: %u"
+ 353      5748 4143 
+ 353      4B45 443A 
+ 353      2025 7500 
+ 354               	.LC9:
+ 355 005b 5265 6369 		.string	"Recieve time: %lu"
+ 355      6576 6520 
+ 355      7469 6D65 
+ 355      3A20 256C 
+ 355      7500 
+ 356               	.LC10:
+ 357 006d 5365 636F 		.string	"Seconds to whack mole = %d\r\n"
+ 357      6E64 7320 
+ 357      746F 2077 
+ 357      6861 636B 
+ 357      206D 6F6C 
+ 358               	.LC11:
+ 359 008a 596F 7572 		.string	"Your score after this turn is = %d\r\n"
+ 359      2073 636F 
+ 359      7265 2061 
+ 359      6674 6572 
+ 359      2074 6869 
+ 360               	.LC12:
+ 361 00af 4649 4E41 		.string	"FINAL SCORE: %d\n"
+ 361      4C20 5343 
+ 361      4F52 453A 
+ 361      2025 640A 
+ 361      00
+ 362               		.text
+ 364               	.global	whacky_task
+ 366               	whacky_task:
+ 367               		.stabd	46,0,0
+   1:main.c        **** /******************************************************************************
+   2:main.c        ****  *  Nano-RK, a real-time operating system for sensor networks.
+   3:main.c        ****  *  Copyright (C) 2007, Real-Time and Multimedia Lab, Carnegie Mellon University
+   4:main.c        ****  *  All rights reserved.
+   5:main.c        ****  *
+   6:main.c        ****  *  This is the Open Source Version of Nano-RK included as part of a Dual
+   7:main.c        ****  *  Licensing Model. If you are unsure which license to use please refer to:
+   8:main.c        ****  *  http://www.nanork.org/nano-RK/wiki/Licensing
+   9:main.c        ****  *
+  10:main.c        ****  *  This program is free software: you can redistribute it and/or modify
+  11:main.c        ****  *  it under the terms of the GNU General Public License as published by
+  12:main.c        ****  *  the Free Software Foundation, version 2.0 of the License.
+  13:main.c        ****  *
+  14:main.c        ****  *  This program is distributed in the hope that it will be useful,
+  15:main.c        ****  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  16:main.c        ****  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  17:main.c        ****  *  GNU General Public License for more details.
+  18:main.c        ****  *
+  19:main.c        ****  *  You should have received a copy of the GNU General Public License
+  20:main.c        ****  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  21:main.c        ****  *
+  22:main.c        ****  *******************************************************************************/
+  23:main.c        **** 
+  24:main.c        **** /**
+  25:main.c        ****   * File: main.c
+  26:main.c        ****   * 18-748: Wireless Sensor Networks
+  27:main.c        ****   * Authors: Lucas Bruder, Jeremy Xiao, and Pallavi Kuman
+  28:main.c        ****   * Team 12
+  29:main.c        ****   * Last modified: 2/8/2016
+  30:main.c        ****   *
+  31:main.c        ****   * This is code loaded on to master firefly node for lab 2. Reponsible for implementing whack a mo
+  32:main.c        ****   *
+  33:main.c        ****   */
+  34:main.c        **** 
+  35:main.c        **** #include <nrk.h>
+  36:main.c        **** #include <include.h>
+  37:main.c        **** #include <ulib.h>
+  38:main.c        **** #include <stdio.h>
+  39:main.c        **** #include <stdlib.h>
+  40:main.c        **** #include <avr/sleep.h>
+  41:main.c        **** #include <hal.h>
+  42:main.c        **** #include <bmac.h>
+  43:main.c        **** #include <nrk_error.h>
+  44:main.c        **** 
+  45:main.c        **** #define MAC_ADDR                15  
+  46:main.c        **** #define NUM_SLAVES               2 
+  47:main.c        ****   
+  48:main.c        **** #define MAX_NUM_MOLES           10 // number of moles played before game is over
+  49:main.c        **** 
+  50:main.c        **** #define MAX_TIMEOUT_COUNTS       5 // max number of receive timeouts allowed before assuming the sl
+  51:main.c        **** #define MOLE_TIMOUT_SECS        10 // number of seconds until mole timeouts and switches to differe
+  52:main.c        **** #define MOLE_TIMEOUT_PENALTY    20 // penalty from letting a mole timeout
+  53:main.c        **** 
+  54:main.c        **** 
+  55:main.c        **** /**
+  56:main.c        ****  * State enumeration for master device
+  57:main.c        ****  */
+  58:main.c        **** typedef enum
+  59:main.c        **** {
+  60:main.c        ****     STATE_MOLE,
+  61:main.c        ****     STATE_WHACKED,
+  62:main.c        ****     STATE_POLL
+  63:main.c        **** } states_E;
+  64:main.c        **** 
+  65:main.c        **** /*
+  66:main.c        ****  * Whacky task
+  67:main.c        ****  */
+  68:main.c        **** nrk_task_type WHACKY_TASK;
+  69:main.c        **** NRK_STK whacky_task_stack[NRK_APP_STACKSIZE];
+  70:main.c        **** uint8_t whacky_buf[RF_MAX_PAYLOAD_SIZE];
+  71:main.c        **** 
+  72:main.c        **** void whacky_task (void);
+  73:main.c        **** void nrk_create_taskset ();
+  74:main.c        **** 
+  75:main.c        **** char buffer[20];       // Buffer for receive decryption 
+  76:main.c        **** uint8_t num_moles = 0; // Number of moles seen (see MAX_NUM_MOLES to increase number of moles per g
+  77:main.c        **** 
+  78:main.c        **** // RX and TX buffers
+  79:main.c        **** uint8_t rx_buf[RF_MAX_PAYLOAD_SIZE];
+  80:main.c        **** uint8_t tx_buf[RF_MAX_PAYLOAD_SIZE];
+  81:main.c        **** 
+  82:main.c        **** uint16_t previous_slave_id; // keeps track of previous mole so we don't choose the same one twice
+  83:main.c        **** int16_t score = 0;         // score of game
+  84:main.c        **** 
+  85:main.c        **** states_E state = STATE_MOLE;    // state of game
+  86:main.c        **** 
+  87:main.c        **** uint8_t dead_devices[NUM_SLAVES]; // keeps track of dead devices
+  88:main.c        **** 
+  89:main.c        **** void nrk_register_drivers();
+  90:main.c        **** 
+  91:main.c        **** int main ()
+  92:main.c        **** {
+  93:main.c        ****     nrk_setup_ports ();
+  94:main.c        ****     nrk_setup_uart (UART_BAUDRATE_115K2);
+  95:main.c        ****     
+  96:main.c        ****     nrk_init ();
+  97:main.c        ****     
+  98:main.c        ****     nrk_led_clr (0);
+  99:main.c        ****     nrk_led_clr (1);
+ 100:main.c        ****     nrk_led_clr (2);
+ 101:main.c        ****     nrk_led_clr (3);
+ 102:main.c        ****     
+ 103:main.c        ****     nrk_time_set (0, 0);
+ 104:main.c        ****     
+ 105:main.c        ****     bmac_task_config ();
+ 106:main.c        ****     
+ 107:main.c        ****     nrk_create_taskset ();
+ 108:main.c        ****     nrk_start ();
+ 109:main.c        ****     
+ 110:main.c        ****     return 0;
+ 111:main.c        **** }
+ 112:main.c        **** 
+ 113:main.c        **** void whacky_task ()
+ 114:main.c        **** {
+ 369               	.LM0:
+ 370               	.LFBB1:
+ 371 0000 CF93      		push r28
+ 372 0002 DF93      		push r29
+ 373 0004 CDB7      		in r28,__SP_L__
+ 374 0006 DEB7      		in r29,__SP_H__
+ 375 0008 E797      		sbiw r28,55
+ 376 000a 0FB6      		in __tmp_reg__,__SREG__
+ 377 000c F894      		cli
+ 378 000e DEBF      		out __SP_H__,r29
+ 379 0010 0FBE      		out __SREG__,__tmp_reg__
+ 380 0012 CDBF      		out __SP_L__,r28
+ 381               	/* prologue: function */
+ 382               	/* frame size = 55 */
+ 383               	/* stack size = 57 */
+ 384               	.L__stack_usage = 57
+ 115:main.c        ****     uint8_t i, len;
+ 116:main.c        ****     int8_t rssi, val;
+ 117:main.c        ****     uint8_t *local_buf;
+ 118:main.c        ****     uint8_t slave_id;
+ 119:main.c        ****     uint8_t timeout;
+ 120:main.c        ****     uint8_t mole_timeout = 0; // set to 1 if the mole timed out, set to 0 otherwise
+ 121:main.c        ****     char option;
+ 122:main.c        ****     nrk_sig_t uart_rx_signal;
+ 123:main.c        **** 
+ 124:main.c        ****     uint16_t slave_id_received; // slave id received from the slave
+ 125:main.c        ****     uint16_t light_value;       // light value received from the slave during polling state
+ 126:main.c        **** 
+ 127:main.c        ****     uint8_t timeout_counts = 0;
+ 128:main.c        **** 
+ 129:main.c        ****     //Timer management for receiving timeout
+ 130:main.c        ****     nrk_time_t start_time_receive, end_time_receive;
+ 131:main.c        ****     nrk_time_t start_time_mole, end_time_mole;
+ 132:main.c        ****     nrk_time_t time_rx, time_tx;
+ 133:main.c        ****     srand(time(NULL));
+ 386               	.LM1:
+ 387 0014 80E0      		ldi r24,0
+ 388 0016 90E0      		ldi r25,0
+ 389 0018 0E94 0000 		call time
+ 390 001c 0E94 0000 		call srand
+ 134:main.c        **** 
+ 135:main.c        ****     // printf ("whacky_task PID=%d\r\n", nrk_get_pid ());
+ 136:main.c        ****     
+ 137:main.c        ****     // This shows you how to wait until a key is pressed to start
+ 138:main.c        ****     nrk_kprintf( PSTR("Press 's' to start\r\n" ));
+ 392               	.LM2:
+ 393 0020 80E0      		ldi r24,lo8(__c.3584)
+ 394 0022 90E0      		ldi r25,hi8(__c.3584)
+ 395 0024 0E94 0000 		call nrk_kprintf
+ 139:main.c        ****     
+ 140:main.c        ****     // Get the signal for UART RX
+ 141:main.c        ****     uart_rx_signal=nrk_uart_rx_signal_get();
+ 397               	.LM3:
+ 398 0028 0E94 0000 		call nrk_uart_rx_signal_get
+ 399 002c 182F      		mov r17,r24
+ 142:main.c        **** 
+ 143:main.c        ****     // Register task to wait on signal
+ 144:main.c        ****     nrk_signal_register(uart_rx_signal);
+ 401               	.LM4:
+ 402 002e 0E94 0000 		call nrk_signal_register
+ 145:main.c        ****     
+ 146:main.c        ****     do{
+ 147:main.c        ****         if(nrk_uart_data_ready(NRK_DEFAULT_UART))
+ 148:main.c        ****         {
+ 149:main.c        ****             option=getchar();
+ 150:main.c        ****         }
+ 151:main.c        **** 
+ 152:main.c        ****         else nrk_event_wait(SIG(uart_rx_signal));
+ 404               	.LM5:
+ 405 0032 C12C      		mov r12,__zero_reg__
+ 406 0034 D12C      		mov r13,__zero_reg__
+ 407 0036 7601      		movw r14,r12
+ 408 0038 C394      		inc r12
+ 409 003a 00C0      		rjmp 2f
+ 410               		1:
+ 411 003c CC0C      		lsl r12
+ 412 003e DD1C      		rol r13
+ 413 0040 EE1C      		rol r14
+ 414 0042 FF1C      		rol r15
+ 415               		2:
+ 416 0044 1A95      		dec r17
+ 417 0046 02F4      		brpl 1b
+ 418               	.L2:
+ 147:main.c        ****         {
+ 420               	.LM6:
+ 421 0048 80E0      		ldi r24,0
+ 422 004a 0E94 0000 		call nrk_uart_data_ready
+ 423 004e 8823      		tst r24
+ 424 0050 01F0      		breq .L3
+ 149:main.c        ****         }
+ 426               	.LM7:
+ 427 0052 8091 0000 		lds r24,__iob
+ 428 0056 9091 0000 		lds r25,__iob+1
+ 429 005a 0E94 0000 		call fgetc
+ 153:main.c        **** 
+ 154:main.c        ****     } while(option!='s');
+ 431               	.LM8:
+ 432 005e 8337      		cpi r24,lo8(115)
+ 433 0060 01F4      		brne .L2
+ 155:main.c        ****     
+ 156:main.c        ****     // init bmac on channel 12 and max power
+ 157:main.c        ****     bmac_init (12);
+ 435               	.LM9:
+ 436 0062 8CE0      		ldi r24,lo8(12)
+ 437 0064 0E94 0000 		call bmac_init
+ 158:main.c        ****     bmac_set_rf_power(32);
+ 439               	.LM10:
+ 440 0068 80E2      		ldi r24,lo8(32)
+ 441 006a 0E94 0000 		call bmac_set_rf_power
+ 159:main.c        ****     
+ 160:main.c        ****     // This sets the next RX buffer.
+ 161:main.c        ****     // This can be called at anytime before releasing the packet
+ 162:main.c        ****     // if you wish to do a zero-copy buffer switch
+ 163:main.c        ****     bmac_rx_pkt_set_buffer (rx_buf, RF_MAX_PAYLOAD_SIZE);
+ 443               	.LM11:
+ 444 006e 64E7      		ldi r22,lo8(116)
+ 445 0070 80E0      		ldi r24,lo8(rx_buf)
+ 446 0072 90E0      		ldi r25,hi8(rx_buf)
+ 447 0074 0E94 0000 		call bmac_rx_pkt_set_buffer
+ 164:main.c        ****     
+ 165:main.c        ****     // initialize the slave id
+ 166:main.c        ****     slave_id = rand() % NUM_SLAVES;
+ 449               	.LM12:
+ 450 0078 0E94 0000 		call rand
+ 451 007c 62E0      		ldi r22,lo8(2)
+ 452 007e 70E0      		ldi r23,0
+ 453 0080 0E94 0000 		call __divmodhi4
+ 454 0084 182F      		mov r17,r24
+ 127:main.c        **** 
+ 456               	.LM13:
+ 457 0086 00E0      		ldi r16,0
+ 120:main.c        ****     char option;
+ 459               	.LM14:
+ 460 0088 1BAA      		std Y+51,__zero_reg__
+ 167:main.c        ****     
+ 168:main.c        ****     while (1)
+ 169:main.c        ****     {
+ 170:main.c        ****         // printf("State: %d\r\n", state);
+ 171:main.c        **** 
+ 172:main.c        ****         /*
+ 173:main.c        ****          * TRANSMIT BUFFER CONSTRUCTION BASED ON STATE
+ 174:main.c        ****          */
+ 175:main.c        ****         if(state == STATE_POLL)
+ 176:main.c        ****         {
+ 177:main.c        ****             sprintf (tx_buf, "POLL: %u", slave_id);
+ 178:main.c        **** 
+ 179:main.c        ****             nrk_led_set (BLUE_LED);
+ 180:main.c        ****             val=bmac_tx_pkt(tx_buf, strlen(tx_buf)+1);
+ 181:main.c        **** 
+ 182:main.c        ****             if(val != NRK_OK)
+ 183:main.c        ****             {
+ 184:main.c        ****                 nrk_kprintf(PSTR("Could not Transmit!\r\n"));
+ 185:main.c        ****             }
+ 186:main.c        **** 
+ 187:main.c        ****             // Task gets control again after TX complete
+ 188:main.c        ****             nrk_kprintf (PSTR ("-> POLL request\r\n"));
+ 189:main.c        ****             nrk_led_clr (BLUE_LED);
+ 190:main.c        ****         }
+ 191:main.c        ****         else if(state == STATE_MOLE)
+ 192:main.c        ****         {
+ 193:main.c        ****             sprintf (tx_buf, "MOLE: %u", slave_id);
+ 194:main.c        **** 
+ 195:main.c        ****             nrk_led_set (BLUE_LED);
+ 196:main.c        ****             val=bmac_tx_pkt(tx_buf, strlen(tx_buf)+1);
+ 197:main.c        ****             nrk_time_get(&time_tx);
+ 198:main.c        ****             printf("time_Tx: %lu", time_tx.secs);
+ 199:main.c        ****             printf("time_Tx: %lu", time_tx.nano_secs);
+ 200:main.c        **** 
+ 201:main.c        ****             if(val != NRK_OK)
+ 202:main.c        ****             {
+ 203:main.c        ****                 nrk_kprintf(PSTR("Could not Transmit!\r\n"));
+ 204:main.c        ****             }
+ 205:main.c        **** 
+ 206:main.c        ****             // Task gets control again after TX complete
+ 207:main.c        ****             nrk_kprintf (PSTR ("-> MOLE request\r\n"));
+ 208:main.c        ****             nrk_led_clr (BLUE_LED);
+ 209:main.c        ****         }
+ 210:main.c        ****         else if(state == STATE_WHACKED)
+ 211:main.c        ****         {
+ 212:main.c        ****             sprintf (tx_buf, "WHACKED: %u", slave_id);
+ 213:main.c        ****             nrk_led_set (BLUE_LED);
+ 214:main.c        ****             val=bmac_tx_pkt(tx_buf, strlen(tx_buf)+1);
+ 215:main.c        **** 
+ 216:main.c        ****             if(val != NRK_OK)
+ 217:main.c        ****             {
+ 218:main.c        ****                 nrk_kprintf(PSTR("Could not Transmit!\r\n"));
+ 219:main.c        ****             }
+ 220:main.c        **** 
+ 221:main.c        ****             // Task gets control again after TX complete
+ 222:main.c        ****             nrk_kprintf (PSTR ("-> WHACKED Request.\r\n"));
+ 223:main.c        ****             nrk_led_clr (BLUE_LED);
+ 224:main.c        ****         }
+ 225:main.c        ****         else
+ 226:main.c        ****         {
+ 227:main.c        ****             // error
+ 228:main.c        ****         }
+ 229:main.c        ****        
+ 230:main.c        ****         // nrk_kprintf(PSTR("Waiting for Response\r\n"));
+ 231:main.c        ****         // Get the RX packet
+ 232:main.c        ****         nrk_led_set (ORANGE_LED);
+ 233:main.c        ****         
+ 234:main.c        ****         // Wait until an RX packet is received
+ 235:main.c        ****         timeout = 0;
+ 236:main.c        **** 
+ 237:main.c        ****         // DEBUG_PRINTF(timeout);
+ 238:main.c        ****         nrk_time_get(&start_time_receive);
+ 239:main.c        ****         /*
+ 240:main.c        ****          *  Code takes care of receiving and sets timeout = 1 if there's a timeout receiving a pack
+ 241:main.c        ****          */
+ 242:main.c        ****         while(1)
+ 243:main.c        ****         {
+ 244:main.c        ****             if(bmac_rx_pkt_ready())
+ 245:main.c        ****             {
+ 246:main.c        ****                 local_buf = bmac_rx_pkt_get (&len, &rssi);
+ 247:main.c        ****                 // printf ("Got RX packet len=%d RSSI=%d [", len, rssi);
+ 248:main.c        ****                 for (i = 0; i < len; i++)
+ 249:main.c        ****                 {
+ 250:main.c        ****                     // printf ("%c", local_buf[i]);
+ 251:main.c        ****                     // printf ("]\r\n");
+ 252:main.c        ****                 }
+ 253:main.c        ****                 
+ 254:main.c        ****                 nrk_led_clr (ORANGE_LED);
+ 255:main.c        ****                 // Release the RX buffer so future packets can arrive
+ 256:main.c        ****                 bmac_rx_pkt_release ();
+ 257:main.c        ****                 break;
+ 258:main.c        ****             }
+ 259:main.c        ****             
+ 260:main.c        ****             // Implement timeouts
+ 261:main.c        ****             nrk_time_get(&end_time_receive);
+ 262:main.c        ****             nrk_time_get(&time_rx);
+ 263:main.c        ****             printf("time_rx: %lu\r\n",time_rx.secs);
+ 462               	.LM15:
+ 463 008a 50E0      		ldi r21,lo8(.LC4)
+ 464 008c 252E      		mov r2,r21
+ 465 008e 50E0      		ldi r21,hi8(.LC4)
+ 466 0090 352E      		mov r3,r21
+ 264:main.c        ****             printf("time_rx: %lu\r\n",time_rx.nano_secs);
+ 265:main.c        ****             // printf("%d \r\n",(end_time_receive.secs-start_time_receive.secs)*1000-(start_time_re
+ 266:main.c        ****             if(end_time_receive.nano_secs > start_time_receive.nano_secs)
+ 267:main.c        ****             {
+ 268:main.c        **** 
+ 269:main.c        ****                 if(((end_time_receive.secs-start_time_receive.secs)*1000+(end_time_receive.nano_sec
+ 270:main.c        ****                 {
+ 271:main.c        ****                     timeout = 1;
+ 272:main.c        ****                     break;
+ 273:main.c        ****                 }
+ 274:main.c        ****             }
+ 275:main.c        ****             else
+ 276:main.c        ****             {
+ 277:main.c        ****                 if(((end_time_receive.secs-start_time_receive.secs)*1000-(start_time_receive.nano_s
+ 468               	.LM16:
+ 469 0092 60E4      		ldi r22,lo8(64)
+ 470 0094 462E      		mov r4,r22
+ 471 0096 62E4      		ldi r22,lo8(66)
+ 472 0098 562E      		mov r5,r22
+ 473 009a 6FE0      		ldi r22,lo8(15)
+ 474 009c 662E      		mov r6,r22
+ 475 009e 712C      		mov r7,__zero_reg__
+ 476 00a0 00C0      		rjmp .L6
+ 477               	.L3:
+ 152:main.c        **** 
+ 479               	.LM17:
+ 480 00a2 C701      		movw r24,r14
+ 481 00a4 B601      		movw r22,r12
+ 482 00a6 0E94 0000 		call nrk_event_wait
+ 483 00aa 00C0      		rjmp .L2
+ 484               	.L13:
+ 261:main.c        ****             nrk_time_get(&time_rx);
+ 486               	.LM18:
+ 487 00ac CE01      		movw r24,r28
+ 488 00ae 8196      		adiw r24,33
+ 489 00b0 0E94 0000 		call nrk_time_get
+ 262:main.c        ****             printf("time_rx: %lu\r\n",time_rx.secs);
+ 491               	.LM19:
+ 492 00b4 CE01      		movw r24,r28
+ 493 00b6 0996      		adiw r24,9
+ 494 00b8 0E94 0000 		call nrk_time_get
+ 263:main.c        ****             printf("time_rx: %lu\r\n",time_rx.nano_secs);
+ 496               	.LM20:
+ 497 00bc 8C85      		ldd r24,Y+12
+ 498 00be 8F93      		push r24
+ 499 00c0 8B85      		ldd r24,Y+11
+ 500 00c2 8F93      		push r24
+ 501 00c4 8A85      		ldd r24,Y+10
+ 502 00c6 8F93      		push r24
+ 503 00c8 8985      		ldd r24,Y+9
+ 504 00ca 8F93      		push r24
+ 505 00cc 3F92      		push r3
+ 506 00ce 2F92      		push r2
+ 507 00d0 0E94 0000 		call printf
+ 264:main.c        ****             // printf("%d \r\n",(end_time_receive.secs-start_time_receive.secs)*1000-(start_time_re
+ 509               	.LM21:
+ 510 00d4 8889      		ldd r24,Y+16
+ 511 00d6 8F93      		push r24
+ 512 00d8 8F85      		ldd r24,Y+15
+ 513 00da 8F93      		push r24
+ 514 00dc 8E85      		ldd r24,Y+14
+ 515 00de 8F93      		push r24
+ 516 00e0 8D85      		ldd r24,Y+13
+ 517 00e2 8F93      		push r24
+ 518 00e4 3F92      		push r3
+ 519 00e6 2F92      		push r2
+ 520 00e8 0E94 0000 		call printf
+ 266:main.c        ****             {
+ 522               	.LM22:
+ 523 00ec 8DA0      		ldd r8,Y+37
+ 524 00ee 9EA0      		ldd r9,Y+38
+ 525 00f0 AFA0      		ldd r10,Y+39
+ 526 00f2 B8A4      		ldd r11,Y+40
+ 527 00f4 CDA4      		ldd r12,Y+45
+ 528 00f6 DEA4      		ldd r13,Y+46
+ 529 00f8 EFA4      		ldd r14,Y+47
+ 530 00fa F8A8      		ldd r15,Y+48
+ 531 00fc 0FB6      		in __tmp_reg__,__SREG__
+ 532 00fe F894      		cli
+ 533 0100 DEBF      		out __SP_H__,r29
+ 534 0102 0FBE      		out __SREG__,__tmp_reg__
+ 535 0104 CDBF      		out __SP_L__,r28
+ 269:main.c        ****                 {
+ 537               	.LM23:
+ 538 0106 49A1      		ldd r20,Y+33
+ 539 0108 5AA1      		ldd r21,Y+34
+ 540 010a 6BA1      		ldd r22,Y+35
+ 541 010c 7CA1      		ldd r23,Y+36
+ 542 010e 89A5      		ldd r24,Y+41
+ 543 0110 9AA5      		ldd r25,Y+42
+ 544 0112 ABA5      		ldd r26,Y+43
+ 545 0114 BCA5      		ldd r27,Y+44
+ 546 0116 9A01      		movw r18,r20
+ 547 0118 AB01      		movw r20,r22
+ 548 011a 281B      		sub r18,r24
+ 549 011c 390B      		sbc r19,r25
+ 550 011e 4A0B      		sbc r20,r26
+ 551 0120 5B0B      		sbc r21,r27
+ 552 0122 A8EE      		ldi r26,lo8(-24)
+ 553 0124 B3E0      		ldi r27,lo8(3)
+ 554 0126 0E94 0000 		call __muluhisi3
+ 555 012a 6CAB      		std Y+52,r22
+ 556 012c 7DAB      		std Y+53,r23
+ 557 012e 8EAB      		std Y+54,r24
+ 558 0130 9FAB      		std Y+55,r25
+ 266:main.c        ****             {
+ 560               	.LM24:
+ 561 0132 C814      		cp r12,r8
+ 562 0134 D904      		cpc r13,r9
+ 563 0136 EA04      		cpc r14,r10
+ 564 0138 FB04      		cpc r15,r11
+ 565 013a 00F0      		brlo .+2
+ 566 013c 00C0      		rjmp .L18
+ 269:main.c        ****                 {
+ 568               	.LM25:
+ 569 013e C501      		movw r24,r10
+ 570 0140 B401      		movw r22,r8
+ 571 0142 6C19      		sub r22,r12
+ 572 0144 7D09      		sbc r23,r13
+ 573 0146 8E09      		sbc r24,r14
+ 574 0148 9F09      		sbc r25,r15
+ 575 014a A301      		movw r20,r6
+ 576 014c 9201      		movw r18,r4
+ 577 014e 0E94 0000 		call __udivmodsi4
+ 578 0152 8CA9      		ldd r24,Y+52
+ 579 0154 9DA9      		ldd r25,Y+53
+ 580 0156 AEA9      		ldd r26,Y+54
+ 581 0158 BFA9      		ldd r27,Y+55
+ 582 015a 820F      		add r24,r18
+ 583 015c 931F      		adc r25,r19
+ 584 015e A41F      		adc r26,r20
+ 585 0160 B51F      		adc r27,r21
+ 586               	.L49:
+ 588               	.LM26:
+ 589 0162 893E      		cpi r24,-23
+ 590 0164 9340      		sbci r25,3
+ 591 0166 A105      		cpc r26,__zero_reg__
+ 592 0168 B105      		cpc r27,__zero_reg__
+ 593 016a 00F4      		brsh .+2
+ 594 016c 00C0      		rjmp .L45
+ 278:main.c        ****                 {
+ 279:main.c        ****                     timeout = 1;
+ 280:main.c        ****                     break;
+ 281:main.c        ****                 }
+ 282:main.c        ****             }
+ 283:main.c        ****         }
+ 284:main.c        ****         
+ 285:main.c        ****         /*
+ 286:main.c        ****          * If there's a timeout, don't execute any code code below and go back to while loop
+ 287:main.c        ****          */ 
+ 288:main.c        ****         if(timeout == 1)
+ 289:main.c        ****         {
+ 290:main.c        ****             nrk_kprintf(PSTR("Rx Timed Out!\r\n"));
+ 596               	.LM27:
+ 597 016e 80E0      		ldi r24,lo8(__c.3605)
+ 598 0170 90E0      		ldi r25,hi8(__c.3605)
+ 599 0172 0E94 0000 		call nrk_kprintf
+ 291:main.c        ****             timeout_counts++;
+ 601               	.LM28:
+ 602 0176 0F5F      		subi r16,lo8(-(1))
+ 292:main.c        **** 
+ 293:main.c        ****             /*
+ 294:main.c        ****              * Self-healing logic
+ 295:main.c        ****              * 
+ 296:main.c        ****              * If we get too many timeouts from one node, we will set the master to the mole state,
+ 297:main.c        ****              * save the slave id that "died" so we don't get it again, and choose a new slave_id, e
+ 298:main.c        ****              * we choose a different one from last time AND we choose a node that hasn't been dead 
+ 299:main.c        ****              * 
+ 300:main.c        ****              * IMPORTANT: If there are only 2 slaves, this will cause a problem because if one of t
+ 301:main.c        ****              * it leaves only one node and the while(1) below will spin infinitely because it can't
+ 302:main.c        ****              * in a row
+ 303:main.c        ****              */
+ 304:main.c        ****             if(timeout_counts >= MAX_TIMEOUT_COUNTS)
+ 604               	.LM29:
+ 605 0178 0530      		cpi r16,lo8(5)
+ 606 017a 00F0      		brlo .L6
+ 305:main.c        ****             {
+ 306:main.c        ****                 nrk_kprintf( PSTR("! Max timeout count reached !\r\n" ));
+ 608               	.LM30:
+ 609 017c 80E0      		ldi r24,lo8(__c.3607)
+ 610 017e 90E0      		ldi r25,hi8(__c.3607)
+ 611 0180 0E94 0000 		call nrk_kprintf
+ 307:main.c        ****                 // Set to mole state and choose a new slave_id
+ 308:main.c        ****                 state = STATE_MOLE;
+ 613               	.LM31:
+ 614 0184 1092 0000 		sts state,__zero_reg__
+ 309:main.c        **** 
+ 310:main.c        ****                 // Ensure we never choose this slave again because its dead
+ 311:main.c        ****                 dead_devices[slave_id] = 1;
+ 616               	.LM32:
+ 617 0188 812F      		mov r24,r17
+ 618 018a 90E0      		ldi r25,0
+ 619 018c FC01      		movw r30,r24
+ 620 018e E050      		subi r30,lo8(-(dead_devices))
+ 621 0190 F040      		sbci r31,hi8(-(dead_devices))
+ 622 0192 21E0      		ldi r18,lo8(1)
+ 623 0194 2083      		st Z,r18
+ 312:main.c        ****                 previous_slave_id = slave_id;
+ 625               	.LM33:
+ 626 0196 9093 0000 		sts previous_slave_id+1,r25
+ 627 019a 8093 0000 		sts previous_slave_id,r24
+ 313:main.c        **** 
+ 314:main.c        ****                 // Choose new slave id
+ 315:main.c        ****                 while(1)
+ 316:main.c        ****                 {
+ 317:main.c        ****                     slave_id = rand()%NUM_SLAVES;
+ 629               	.LM34:
+ 630 019e 02E0      		ldi r16,lo8(2)
+ 631 01a0 10E0      		ldi r17,0
+ 632               	.L38:
+ 633 01a2 0E94 0000 		call rand
+ 634 01a6 B801      		movw r22,r16
+ 635 01a8 0E94 0000 		call __divmodhi4
+ 318:main.c        **** 
+ 319:main.c        ****                     if((dead_devices[slave_id] == 0) && (slave_id != previous_slave_id) )  // This 
+ 637               	.LM35:
+ 638 01ac 9C01      		movw r18,r24
+ 639 01ae 3327      		clr r19
+ 640 01b0 F901      		movw r30,r18
+ 641 01b2 E050      		subi r30,lo8(-(dead_devices))
+ 642 01b4 F040      		sbci r31,hi8(-(dead_devices))
+ 643 01b6 4081      		ld r20,Z
+ 644 01b8 4111      		cpse r20,__zero_reg__
+ 645 01ba 00C0      		rjmp .L38
+ 647               	.LM36:
+ 648 01bc 4091 0000 		lds r20,previous_slave_id
+ 649 01c0 5091 0000 		lds r21,previous_slave_id+1
+ 650 01c4 2417      		cp r18,r20
+ 651 01c6 3507      		cpc r19,r21
+ 652 01c8 01F0      		breq .L38
+ 317:main.c        **** 
+ 654               	.LM37:
+ 655 01ca 182F      		mov r17,r24
+ 320:main.c        ****                     {
+ 321:main.c        ****                         break;
+ 322:main.c        ****                     }
+ 323:main.c        ****                 }
+ 324:main.c        **** 
+ 325:main.c        ****                 timeout_counts = 0; // reset timeout counts for new slave device
+ 657               	.LM38:
+ 658 01cc 00E0      		ldi r16,0
+ 659               	.L6:
+ 175:main.c        ****         {
+ 661               	.LM39:
+ 662 01ce 8091 0000 		lds r24,state
+ 663 01d2 8230      		cpi r24,lo8(2)
+ 664 01d4 01F4      		brne .L7
+ 177:main.c        **** 
+ 666               	.LM40:
+ 667 01d6 1F92      		push __zero_reg__
+ 668 01d8 1F93      		push r17
+ 669 01da 80E0      		ldi r24,lo8(.LC0)
+ 670 01dc 90E0      		ldi r25,hi8(.LC0)
+ 671 01de 9F93      		push r25
+ 672 01e0 8F93      		push r24
+ 673 01e2 40E0      		ldi r20,lo8(tx_buf)
+ 674 01e4 E42E      		mov r14,r20
+ 675 01e6 40E0      		ldi r20,hi8(tx_buf)
+ 676 01e8 F42E      		mov r15,r20
+ 677 01ea FF92      		push r15
+ 678 01ec EF92      		push r14
+ 679 01ee 0E94 0000 		call sprintf
+ 179:main.c        ****             val=bmac_tx_pkt(tx_buf, strlen(tx_buf)+1);
+ 681               	.LM41:
+ 682 01f2 83E0      		ldi r24,lo8(3)
+ 683 01f4 90E0      		ldi r25,0
+ 684 01f6 0E94 0000 		call nrk_led_set
+ 180:main.c        **** 
+ 686               	.LM42:
+ 687 01fa F701      		movw r30,r14
+ 688               		0:
+ 689 01fc 0190      		ld __tmp_reg__,Z+
+ 690 01fe 0020      		tst __tmp_reg__
+ 691 0200 01F4      		brne 0b
+ 692 0202 3197      		sbiw r30,1
+ 693 0204 E050      		subi r30,lo8(tx_buf)
+ 694 0206 F040      		sbci r31,hi8(tx_buf)
+ 695 0208 61E0      		ldi r22,lo8(1)
+ 696 020a 6E0F      		add r22,r30
+ 697 020c C701      		movw r24,r14
+ 698 020e 0E94 0000 		call bmac_tx_pkt
+ 182:main.c        ****             {
+ 700               	.LM43:
+ 701 0212 0F90      		pop __tmp_reg__
+ 702 0214 0F90      		pop __tmp_reg__
+ 703 0216 0F90      		pop __tmp_reg__
+ 704 0218 0F90      		pop __tmp_reg__
+ 705 021a 0F90      		pop __tmp_reg__
+ 706 021c 0F90      		pop __tmp_reg__
+ 707 021e 8130      		cpi r24,lo8(1)
+ 708 0220 01F0      		breq .L8
+ 184:main.c        ****             }
+ 710               	.LM44:
+ 711 0222 80E0      		ldi r24,lo8(__c.3588)
+ 712 0224 90E0      		ldi r25,hi8(__c.3588)
+ 713 0226 0E94 0000 		call nrk_kprintf
+ 714               	.L8:
+ 188:main.c        ****             nrk_led_clr (BLUE_LED);
+ 716               	.LM45:
+ 717 022a 80E0      		ldi r24,lo8(__c.3590)
+ 718 022c 90E0      		ldi r25,hi8(__c.3590)
+ 719 022e 00C0      		rjmp .L46
+ 720               	.L7:
+ 191:main.c        ****         {
+ 722               	.LM46:
+ 723 0230 8111      		cpse r24,__zero_reg__
+ 724 0232 00C0      		rjmp .L10
+ 193:main.c        **** 
+ 726               	.LM47:
+ 727 0234 1F92      		push __zero_reg__
+ 728 0236 1F93      		push r17
+ 729 0238 80E0      		ldi r24,lo8(.LC1)
+ 730 023a 90E0      		ldi r25,hi8(.LC1)
+ 731 023c 9F93      		push r25
+ 732 023e 8F93      		push r24
+ 733 0240 20E0      		ldi r18,lo8(tx_buf)
+ 734 0242 E22E      		mov r14,r18
+ 735 0244 20E0      		ldi r18,hi8(tx_buf)
+ 736 0246 F22E      		mov r15,r18
+ 737 0248 FF92      		push r15
+ 738 024a EF92      		push r14
+ 739 024c 0E94 0000 		call sprintf
+ 195:main.c        ****             val=bmac_tx_pkt(tx_buf, strlen(tx_buf)+1);
+ 741               	.LM48:
+ 742 0250 83E0      		ldi r24,lo8(3)
+ 743 0252 90E0      		ldi r25,0
+ 744 0254 0E94 0000 		call nrk_led_set
+ 196:main.c        ****             nrk_time_get(&time_tx);
+ 746               	.LM49:
+ 747 0258 F701      		movw r30,r14
+ 748               		0:
+ 749 025a 0190      		ld __tmp_reg__,Z+
+ 750 025c 0020      		tst __tmp_reg__
+ 751 025e 01F4      		brne 0b
+ 752 0260 3197      		sbiw r30,1
+ 753 0262 E050      		subi r30,lo8(tx_buf)
+ 754 0264 F040      		sbci r31,hi8(tx_buf)
+ 755 0266 61E0      		ldi r22,lo8(1)
+ 756 0268 6E0F      		add r22,r30
+ 757 026a C701      		movw r24,r14
+ 758 026c 0E94 0000 		call bmac_tx_pkt
+ 759 0270 D82E      		mov r13,r24
+ 197:main.c        ****             printf("time_Tx: %lu", time_tx.secs);
+ 761               	.LM50:
+ 762 0272 CE01      		movw r24,r28
+ 763 0274 0196      		adiw r24,1
+ 764 0276 0E94 0000 		call nrk_time_get
+ 198:main.c        ****             printf("time_Tx: %lu", time_tx.nano_secs);
+ 766               	.LM51:
+ 767 027a 8C81      		ldd r24,Y+4
+ 768 027c 8F93      		push r24
+ 769 027e 8B81      		ldd r24,Y+3
+ 770 0280 8F93      		push r24
+ 771 0282 8A81      		ldd r24,Y+2
+ 772 0284 8F93      		push r24
+ 773 0286 8981      		ldd r24,Y+1
+ 774 0288 8F93      		push r24
+ 775 028a 30E0      		ldi r19,lo8(.LC2)
+ 776 028c E32E      		mov r14,r19
+ 777 028e 30E0      		ldi r19,hi8(.LC2)
+ 778 0290 F32E      		mov r15,r19
+ 779 0292 FF92      		push r15
+ 780 0294 EF92      		push r14
+ 781 0296 0E94 0000 		call printf
+ 199:main.c        **** 
+ 783               	.LM52:
+ 784 029a 8885      		ldd r24,Y+8
+ 785 029c 8F93      		push r24
+ 786 029e 8F81      		ldd r24,Y+7
+ 787 02a0 8F93      		push r24
+ 788 02a2 8E81      		ldd r24,Y+6
+ 789 02a4 8F93      		push r24
+ 790 02a6 8D81      		ldd r24,Y+5
+ 791 02a8 8F93      		push r24
+ 792 02aa FF92      		push r15
+ 793 02ac EF92      		push r14
+ 794 02ae 0E94 0000 		call printf
+ 201:main.c        ****             {
+ 796               	.LM53:
+ 797 02b2 0FB6      		in __tmp_reg__,__SREG__
+ 798 02b4 F894      		cli
+ 799 02b6 DEBF      		out __SP_H__,r29
+ 800 02b8 0FBE      		out __SREG__,__tmp_reg__
+ 801 02ba CDBF      		out __SP_L__,r28
+ 802 02bc 91E0      		ldi r25,lo8(1)
+ 803 02be D916      		cp r13,r25
+ 804 02c0 01F0      		breq .L11
+ 203:main.c        ****             }
+ 806               	.LM54:
+ 807 02c2 80E0      		ldi r24,lo8(__c.3592)
+ 808 02c4 90E0      		ldi r25,hi8(__c.3592)
+ 809 02c6 0E94 0000 		call nrk_kprintf
+ 810               	.L11:
+ 207:main.c        ****             nrk_led_clr (BLUE_LED);
+ 812               	.LM55:
+ 813 02ca 80E0      		ldi r24,lo8(__c.3594)
+ 814 02cc 90E0      		ldi r25,hi8(__c.3594)
+ 815 02ce 00C0      		rjmp .L46
+ 816               	.L10:
+ 210:main.c        ****         {
+ 818               	.LM56:
+ 819 02d0 8130      		cpi r24,lo8(1)
+ 820 02d2 01F4      		brne .L9
+ 212:main.c        ****             nrk_led_set (BLUE_LED);
+ 822               	.LM57:
+ 823 02d4 1F92      		push __zero_reg__
+ 824 02d6 1F93      		push r17
+ 825 02d8 80E0      		ldi r24,lo8(.LC3)
+ 826 02da 90E0      		ldi r25,hi8(.LC3)
+ 827 02dc 9F93      		push r25
+ 828 02de 8F93      		push r24
+ 829 02e0 90E0      		ldi r25,lo8(tx_buf)
+ 830 02e2 E92E      		mov r14,r25
+ 831 02e4 90E0      		ldi r25,hi8(tx_buf)
+ 832 02e6 F92E      		mov r15,r25
+ 833 02e8 FF92      		push r15
+ 834 02ea EF92      		push r14
+ 835 02ec 0E94 0000 		call sprintf
+ 213:main.c        ****             val=bmac_tx_pkt(tx_buf, strlen(tx_buf)+1);
+ 837               	.LM58:
+ 838 02f0 83E0      		ldi r24,lo8(3)
+ 839 02f2 90E0      		ldi r25,0
+ 840 02f4 0E94 0000 		call nrk_led_set
+ 214:main.c        **** 
+ 842               	.LM59:
+ 843 02f8 F701      		movw r30,r14
+ 844               		0:
+ 845 02fa 0190      		ld __tmp_reg__,Z+
+ 846 02fc 0020      		tst __tmp_reg__
+ 847 02fe 01F4      		brne 0b
+ 848 0300 3197      		sbiw r30,1
+ 849 0302 E050      		subi r30,lo8(tx_buf)
+ 850 0304 F040      		sbci r31,hi8(tx_buf)
+ 851 0306 61E0      		ldi r22,lo8(1)
+ 852 0308 6E0F      		add r22,r30
+ 853 030a C701      		movw r24,r14
+ 854 030c 0E94 0000 		call bmac_tx_pkt
+ 216:main.c        ****             {
+ 856               	.LM60:
+ 857 0310 0F90      		pop __tmp_reg__
+ 858 0312 0F90      		pop __tmp_reg__
+ 859 0314 0F90      		pop __tmp_reg__
+ 860 0316 0F90      		pop __tmp_reg__
+ 861 0318 0F90      		pop __tmp_reg__
+ 862 031a 0F90      		pop __tmp_reg__
+ 863 031c 8130      		cpi r24,lo8(1)
+ 864 031e 01F0      		breq .L12
+ 218:main.c        ****             }
+ 866               	.LM61:
+ 867 0320 80E0      		ldi r24,lo8(__c.3596)
+ 868 0322 90E0      		ldi r25,hi8(__c.3596)
+ 869 0324 0E94 0000 		call nrk_kprintf
+ 870               	.L12:
+ 222:main.c        ****             nrk_led_clr (BLUE_LED);
+ 872               	.LM62:
+ 873 0328 80E0      		ldi r24,lo8(__c.3598)
+ 874 032a 90E0      		ldi r25,hi8(__c.3598)
+ 875               	.L46:
+ 876 032c 0E94 0000 		call nrk_kprintf
+ 223:main.c        ****         }
+ 878               	.LM63:
+ 879 0330 83E0      		ldi r24,lo8(3)
+ 880 0332 90E0      		ldi r25,0
+ 881 0334 0E94 0000 		call nrk_led_clr
+ 882               	.L9:
+ 232:main.c        ****         
+ 884               	.LM64:
+ 885 0338 82E0      		ldi r24,lo8(2)
+ 886 033a 90E0      		ldi r25,0
+ 887 033c 0E94 0000 		call nrk_led_set
+ 238:main.c        ****         /*
+ 889               	.LM65:
+ 890 0340 CE01      		movw r24,r28
+ 891 0342 8996      		adiw r24,41
+ 892 0344 0E94 0000 		call nrk_time_get
+ 893               	.L45:
+ 244:main.c        ****             {
+ 895               	.LM66:
+ 896 0348 0E94 0000 		call bmac_rx_pkt_ready
+ 897 034c 8823      		tst r24
+ 898 034e 01F4      		brne .+2
+ 899 0350 00C0      		rjmp .L13
+ 246:main.c        ****                 // printf ("Got RX packet len=%d RSSI=%d [", len, rssi);
+ 901               	.LM67:
+ 902 0352 BE01      		movw r22,r28
+ 903 0354 6F5C      		subi r22,-49
+ 904 0356 7F4F      		sbci r23,-1
+ 905 0358 CE01      		movw r24,r28
+ 906 035a C296      		adiw r24,50
+ 907 035c 0E94 0000 		call bmac_rx_pkt_get
+ 908 0360 7C01      		movw r14,r24
+ 248:main.c        ****                 {
+ 910               	.LM68:
+ 911 0362 9AA9      		ldd r25,Y+50
+ 912 0364 80E0      		ldi r24,0
+ 913               	.L14:
+ 248:main.c        ****                 {
+ 915               	.LM69:
+ 916 0366 8917      		cp r24,r25
+ 917 0368 01F0      		breq .L51
+ 248:main.c        ****                 {
+ 919               	.LM70:
+ 920 036a 8F5F      		subi r24,lo8(-(1))
+ 921 036c 00C0      		rjmp .L14
+ 922               	.L51:
+ 254:main.c        ****                 // Release the RX buffer so future packets can arrive
+ 924               	.LM71:
+ 925 036e 82E0      		ldi r24,lo8(2)
+ 926 0370 90E0      		ldi r25,0
+ 927 0372 0E94 0000 		call nrk_led_clr
+ 256:main.c        ****                 break;
+ 929               	.LM72:
+ 930 0376 0E94 0000 		call bmac_rx_pkt_release
+ 326:main.c        ****             }
+ 327:main.c        ****             continue;
+ 328:main.c        ****         }
+ 329:main.c        **** 
+ 330:main.c        ****         /*
+ 331:main.c        ****          *  DECODE RECEIVED STRING
+ 332:main.c        ****          */
+ 333:main.c        ****         if(state == STATE_POLL)
+ 932               	.LM73:
+ 933 037a 8091 0000 		lds r24,state
+ 934 037e 8230      		cpi r24,lo8(2)
+ 935 0380 01F0      		breq .+2
+ 936 0382 00C0      		rjmp .L44
+ 937 0384 00C0      		rjmp .L52
+ 938               	.L18:
+ 277:main.c        ****                 {
+ 940               	.LM74:
+ 941 0386 C701      		movw r24,r14
+ 942 0388 B601      		movw r22,r12
+ 943 038a 6819      		sub r22,r8
+ 944 038c 7909      		sbc r23,r9
+ 945 038e 8A09      		sbc r24,r10
+ 946 0390 9B09      		sbc r25,r11
+ 947 0392 A301      		movw r20,r6
+ 948 0394 9201      		movw r18,r4
+ 949 0396 0E94 0000 		call __udivmodsi4
+ 950 039a 8CA9      		ldd r24,Y+52
+ 951 039c 9DA9      		ldd r25,Y+53
+ 952 039e AEA9      		ldd r26,Y+54
+ 953 03a0 BFA9      		ldd r27,Y+55
+ 954 03a2 821B      		sub r24,r18
+ 955 03a4 930B      		sbc r25,r19
+ 956 03a6 A40B      		sbc r26,r20
+ 957 03a8 B50B      		sbc r27,r21
+ 958 03aa 00C0      		rjmp .L49
+ 959               	.L52:
+ 960               	.LBB2:
+ 334:main.c        ****         {   
+ 335:main.c        ****             slave_id_received = atoi(strtok((char*)local_buf,":"));
+ 962               	.LM75:
+ 963 03ac 60E0      		ldi r22,lo8(.LC5)
+ 964 03ae 70E0      		ldi r23,hi8(.LC5)
+ 965 03b0 C701      		movw r24,r14
+ 966 03b2 0E94 0000 		call strtok
+ 967 03b6 0E94 0000 		call atoi
+ 968 03ba 7C01      		movw r14,r24
+ 336:main.c        **** 
+ 337:main.c        ****             // printf("%s\n", slave_id);
+ 338:main.c        ****             light_value=atoi(strtok(NULL,"\n"));
+ 970               	.LM76:
+ 971 03bc 60E0      		ldi r22,lo8(.LC6)
+ 972 03be 70E0      		ldi r23,hi8(.LC6)
+ 973 03c0 80E0      		ldi r24,0
+ 974 03c2 90E0      		ldi r25,0
+ 975 03c4 0E94 0000 		call strtok
+ 976 03c8 0E94 0000 		call atoi
+ 977 03cc 6C01      		movw r12,r24
+ 339:main.c        ****             // printf("%s\n",light_value);
+ 340:main.c        **** 
+ 341:main.c        ****             // check length of time elapsed for each iteration of the loop
+ 342:main.c        ****             nrk_time_get(&end_time_mole);
+ 979               	.LM77:
+ 980 03ce CE01      		movw r24,r28
+ 981 03d0 4196      		adiw r24,17
+ 982 03d2 0E94 0000 		call nrk_time_get
+ 343:main.c        **** 
+ 344:main.c        ****             uint16_t poll_time_elapsed = end_time_mole.secs - start_time_mole.secs;
+ 984               	.LM78:
+ 985 03d6 8989      		ldd r24,Y+17
+ 986 03d8 9A89      		ldd r25,Y+18
+ 987 03da 298D      		ldd r18,Y+25
+ 988 03dc 3A8D      		ldd r19,Y+26
+ 989 03de 821B      		sub r24,r18
+ 990 03e0 930B      		sbc r25,r19
+ 345:main.c        **** 
+ 346:main.c        ****             // Tell mole to whack itself, and set boolean to indicate to subtract from score 
+ 347:main.c        ****             if(poll_time_elapsed > MOLE_TIMOUT_SECS)
+ 992               	.LM79:
+ 993 03e2 0B97      		sbiw r24,11
+ 994 03e4 00F0      		brlo .L23
+ 348:main.c        ****             {
+ 349:main.c        ****                 nrk_kprintf( PSTR("! Mole timed out !\r\n" ));
+ 996               	.LM80:
+ 997 03e6 80E0      		ldi r24,lo8(__c.3613)
+ 998 03e8 90E0      		ldi r25,hi8(__c.3613)
+ 999 03ea 0E94 0000 		call nrk_kprintf
+ 350:main.c        ****                 mole_timeout = 1;
+ 351:main.c        ****                 state = STATE_WHACKED;
+ 1001               	.LM81:
+ 1002 03ee 81E0      		ldi r24,lo8(1)
+ 1003 03f0 8093 0000 		sts state,r24
+ 350:main.c        ****                 mole_timeout = 1;
+ 1005               	.LM82:
+ 1006 03f4 8BAB      		std Y+51,r24
+ 1007 03f6 00C0      		rjmp .L24
+ 1008               	.L23:
+ 352:main.c        ****             }
+ 353:main.c        ****             else if ((light_value < 600) && (slave_id_received == slave_id))
+ 1010               	.LM83:
+ 1011 03f8 98E5      		ldi r25,88
+ 1012 03fa C916      		cp r12,r25
+ 1013 03fc 92E0      		ldi r25,2
+ 1014 03fe D906      		cpc r13,r25
+ 1015 0400 00F0      		brlo .+2
+ 1016 0402 00C0      		rjmp .L24
+ 1018               	.LM84:
+ 1019 0404 812F      		mov r24,r17
+ 1020 0406 90E0      		ldi r25,0
+ 1021 0408 E816      		cp r14,r24
+ 1022 040a F906      		cpc r15,r25
+ 1023 040c 01F0      		breq .+2
+ 1024 040e 00C0      		rjmp .L24
+ 354:main.c        ****             {
+ 355:main.c        ****                 nrk_kprintf( PSTR("! Mole whacked !\r\n" ));
+ 1026               	.LM85:
+ 1027 0410 80E0      		ldi r24,lo8(__c.3615)
+ 1028 0412 90E0      		ldi r25,hi8(__c.3615)
+ 1029 0414 0E94 0000 		call nrk_kprintf
+ 356:main.c        ****                 state = STATE_WHACKED;
+ 1031               	.LM86:
+ 1032 0418 81E0      		ldi r24,lo8(1)
+ 1033 041a 8093 0000 		sts state,r24
+ 1034 041e 00C0      		rjmp .L24
+ 1035               	.L44:
+ 1036               	.LBE2:
+ 357:main.c        ****             }
+ 358:main.c        **** 
+ 359:main.c        ****         }   
+ 360:main.c        ****         else if(state == STATE_MOLE)
+ 1038               	.LM87:
+ 1039 0420 8111      		cpse r24,__zero_reg__
+ 1040 0422 00C0      		rjmp .L25
+ 361:main.c        ****         {
+ 362:main.c        ****             sprintf(buffer, "GOT_MOLE: %u", slave_id);
+ 1042               	.LM88:
+ 1043 0424 1F92      		push __zero_reg__
+ 1044 0426 1F93      		push r17
+ 1045 0428 80E0      		ldi r24,lo8(.LC7)
+ 1046 042a 90E0      		ldi r25,hi8(.LC7)
+ 1047 042c 9F93      		push r25
+ 1048 042e 8F93      		push r24
+ 1049 0430 80E0      		ldi r24,lo8(buffer)
+ 1050 0432 90E0      		ldi r25,hi8(buffer)
+ 1051 0434 9F93      		push r25
+ 1052 0436 8F93      		push r24
+ 1053 0438 0E94 0000 		call sprintf
+ 363:main.c        ****             /**
+ 364:main.c        ****               * Change to polling state if received string is equal to "GOT_MOLE: <slave_id>"
+ 365:main.c        ****               */ 
+ 366:main.c        ****             if (strcmp(buffer,(char*)local_buf)==0)
+ 1055               	.LM89:
+ 1056 043c B701      		movw r22,r14
+ 1057 043e 80E0      		ldi r24,lo8(buffer)
+ 1058 0440 90E0      		ldi r25,hi8(buffer)
+ 1059 0442 0E94 0000 		call strcmp
+ 1060 0446 0F90      		pop __tmp_reg__
+ 1061 0448 0F90      		pop __tmp_reg__
+ 1062 044a 0F90      		pop __tmp_reg__
+ 1063 044c 0F90      		pop __tmp_reg__
+ 1064 044e 0F90      		pop __tmp_reg__
+ 1065 0450 0F90      		pop __tmp_reg__
+ 1066 0452 892B      		or r24,r25
+ 1067 0454 01F0      		breq .+2
+ 1068 0456 00C0      		rjmp .L24
+ 367:main.c        ****             {
+ 368:main.c        ****                 num_moles++;
+ 1070               	.LM90:
+ 1071 0458 8091 0000 		lds r24,num_moles
+ 1072 045c 8F5F      		subi r24,lo8(-(1))
+ 1073 045e 8093 0000 		sts num_moles,r24
+ 369:main.c        ****                 state = STATE_POLL;
+ 1075               	.LM91:
+ 1076 0462 82E0      		ldi r24,lo8(2)
+ 1077 0464 8093 0000 		sts state,r24
+ 370:main.c        **** 
+ 371:main.c        ****                 // start a timer here
+ 372:main.c        ****                 nrk_time_get(&start_time_mole);
+ 1079               	.LM92:
+ 1080 0468 CE01      		movw r24,r28
+ 1081 046a 4996      		adiw r24,25
+ 1082 046c 0E94 0000 		call nrk_time_get
+ 1083 0470 00C0      		rjmp .L24
+ 1084               	.L25:
+ 373:main.c        ****             }
+ 374:main.c        ****         }
+ 375:main.c        ****         else if(state == STATE_WHACKED)
+ 1086               	.LM93:
+ 1087 0472 8130      		cpi r24,lo8(1)
+ 1088 0474 01F0      		breq .+2
+ 1089 0476 00C0      		rjmp .L24
+ 376:main.c        ****         {
+ 377:main.c        ****             sprintf(buffer,"GOT_WHACKED: %u", slave_id);
+ 1091               	.LM94:
+ 1092 0478 C12E      		mov r12,r17
+ 1093 047a D12C      		mov r13,__zero_reg__
+ 1094 047c 1F92      		push __zero_reg__
+ 1095 047e 1F93      		push r17
+ 1096 0480 80E0      		ldi r24,lo8(.LC8)
+ 1097 0482 90E0      		ldi r25,hi8(.LC8)
+ 1098 0484 9F93      		push r25
+ 1099 0486 8F93      		push r24
+ 1100 0488 80E0      		ldi r24,lo8(buffer)
+ 1101 048a 90E0      		ldi r25,hi8(buffer)
+ 1102 048c 9F93      		push r25
+ 1103 048e 8F93      		push r24
+ 1104 0490 0E94 0000 		call sprintf
+ 378:main.c        **** 
+ 379:main.c        ****             /**
+ 380:main.c        ****               * Change to polling state if received string is equal to "GOT_WHACKED: <slave_id>"
+ 381:main.c        ****               */ 
+ 382:main.c        ****             if (strcmp(buffer,(char*)local_buf)==0)
+ 1106               	.LM95:
+ 1107 0494 B701      		movw r22,r14
+ 1108 0496 80E0      		ldi r24,lo8(buffer)
+ 1109 0498 90E0      		ldi r25,hi8(buffer)
+ 1110 049a 0E94 0000 		call strcmp
+ 1111 049e 0F90      		pop __tmp_reg__
+ 1112 04a0 0F90      		pop __tmp_reg__
+ 1113 04a2 0F90      		pop __tmp_reg__
+ 1114 04a4 0F90      		pop __tmp_reg__
+ 1115 04a6 0F90      		pop __tmp_reg__
+ 1116 04a8 0F90      		pop __tmp_reg__
+ 1117 04aa 892B      		or r24,r25
+ 1118 04ac 01F0      		breq .+2
+ 1119 04ae 00C0      		rjmp .L24
+ 1120               	.LBB3:
+ 383:main.c        ****             {
+ 384:main.c        ****                 // Set previous slave id and find new one not equal to the old one
+ 385:main.c        ****                 previous_slave_id = slave_id;
+ 1122               	.LM96:
+ 1123 04b0 D092 0000 		sts previous_slave_id+1,r13
+ 1124 04b4 C092 0000 		sts previous_slave_id,r12
+ 386:main.c        **** 
+ 387:main.c        ****                 // Stop timer
+ 388:main.c        ****                 nrk_time_get(&end_time_mole);
+ 1126               	.LM97:
+ 1127 04b8 CE01      		movw r24,r28
+ 1128 04ba 4196      		adiw r24,17
+ 1129 04bc 0E94 0000 		call nrk_time_get
+ 389:main.c        ****                 
+ 390:main.c        ****                 /*
+ 391:main.c        ****                  * Choose new slave_id, ensuring we don't pick our previous one AND ensuring we don
+ 392:main.c        ****                  */
+ 393:main.c        ****                 while(1)
+ 394:main.c        ****                 {
+ 395:main.c        ****                     slave_id = rand() % NUM_SLAVES;
+ 1131               	.LM98:
+ 1132 04c0 82E0      		ldi r24,lo8(2)
+ 1133 04c2 E82E      		mov r14,r24
+ 1134 04c4 F12C      		mov r15,__zero_reg__
+ 1135               	.L39:
+ 1136 04c6 0E94 0000 		call rand
+ 1137 04ca B701      		movw r22,r14
+ 1138 04cc 0E94 0000 		call __divmodhi4
+ 1139 04d0 6C01      		movw r12,r24
+ 396:main.c        **** 
+ 397:main.c        ****                     // Only let this be the new slave_id if it's not dead and its not equal to the 
+ 398:main.c        ****                     if((dead_devices[slave_id] == 0) && (slave_id != previous_slave_id)) 
+ 1141               	.LM99:
+ 1142 04d2 9927      		clr r25
+ 1143 04d4 FC01      		movw r30,r24
+ 1144 04d6 E050      		subi r30,lo8(-(dead_devices))
+ 1145 04d8 F040      		sbci r31,hi8(-(dead_devices))
+ 1146 04da 2081      		ld r18,Z
+ 1147 04dc 2111      		cpse r18,__zero_reg__
+ 1148 04de 00C0      		rjmp .L39
+ 1150               	.LM100:
+ 1151 04e0 2091 0000 		lds r18,previous_slave_id
+ 1152 04e4 3091 0000 		lds r19,previous_slave_id+1
+ 1153 04e8 8217      		cp r24,r18
+ 1154 04ea 9307      		cpc r25,r19
+ 1155 04ec 01F0      		breq .L39
+ 399:main.c        ****                     {
+ 400:main.c        ****                         break;
+ 401:main.c        ****                     }
+ 402:main.c        ****                 }    
+ 403:main.c        **** 
+ 404:main.c        ****                 uint16_t seconds_to_whack = end_time_mole.secs - start_time_mole.secs;
+ 1157               	.LM101:
+ 1158 04ee E988      		ldd r14,Y+17
+ 1159 04f0 FA88      		ldd r15,Y+18
+ 1160 04f2 898D      		ldd r24,Y+25
+ 1161 04f4 9A8D      		ldd r25,Y+26
+ 1162 04f6 E81A      		sub r14,r24
+ 1163 04f8 F90A      		sbc r15,r25
+ 405:main.c        ****                 printf("Recieve time: %lu", seconds_to_whack);
+ 1165               	.LM102:
+ 1166 04fa FF92      		push r15
+ 1167 04fc EF92      		push r14
+ 1168 04fe 80E0      		ldi r24,lo8(.LC9)
+ 1169 0500 90E0      		ldi r25,hi8(.LC9)
+ 1170 0502 9F93      		push r25
+ 1171 0504 8F93      		push r24
+ 1172 0506 0E94 0000 		call printf
+ 406:main.c        **** 
+ 407:main.c        ****                 if(mole_timeout == 0)
+ 1174               	.LM103:
+ 1175 050a 0F90      		pop __tmp_reg__
+ 1176 050c 0F90      		pop __tmp_reg__
+ 1177 050e 0F90      		pop __tmp_reg__
+ 1178 0510 0F90      		pop __tmp_reg__
+ 1179 0512 8091 0000 		lds r24,score
+ 1180 0516 9091 0000 		lds r25,score+1
+ 1181 051a 2BA9      		ldd r18,Y+51
+ 1182 051c 2111      		cpse r18,__zero_reg__
+ 1183 051e 00C0      		rjmp .L27
+ 408:main.c        ****                 {
+ 409:main.c        ****                     score += seconds_to_whack;
+ 1185               	.LM104:
+ 1186 0520 8E0D      		add r24,r14
+ 1187 0522 9F1D      		adc r25,r15
+ 1188 0524 00C0      		rjmp .L47
+ 1189               	.L27:
+ 410:main.c        ****                 }
+ 411:main.c        ****                 else
+ 412:main.c        ****                 {
+ 413:main.c        ****                     score += MOLE_TIMEOUT_PENALTY;
+ 1191               	.LM105:
+ 1192 0526 4496      		adiw r24,20
+ 1193               	.L47:
+ 1194 0528 9093 0000 		sts score+1,r25
+ 1195 052c 8093 0000 		sts score,r24
+ 395:main.c        **** 
+ 1197               	.LM106:
+ 1198 0530 1C2D      		mov r17,r12
+ 414:main.c        ****                     mole_timeout = 0;
+ 415:main.c        ****                 }
+ 416:main.c        **** 
+ 417:main.c        ****                 state = STATE_MOLE;
+ 1200               	.LM107:
+ 1201 0532 1092 0000 		sts state,__zero_reg__
+ 418:main.c        **** 
+ 419:main.c        ****                 printf("Seconds to whack mole = %d\r\n", seconds_to_whack);
+ 1203               	.LM108:
+ 1204 0536 FF92      		push r15
+ 1205 0538 EF92      		push r14
+ 1206 053a 80E0      		ldi r24,lo8(.LC10)
+ 1207 053c 90E0      		ldi r25,hi8(.LC10)
+ 1208 053e 9F93      		push r25
+ 1209 0540 8F93      		push r24
+ 1210 0542 0E94 0000 		call printf
+ 420:main.c        ****                 printf("Your score after this turn is = %d\r\n", score);
+ 1212               	.LM109:
+ 1213 0546 8091 0000 		lds r24,score+1
+ 1214 054a 8F93      		push r24
+ 1215 054c 8091 0000 		lds r24,score
+ 1216 0550 8F93      		push r24
+ 1217 0552 80E0      		ldi r24,lo8(.LC11)
+ 1218 0554 90E0      		ldi r25,hi8(.LC11)
+ 1219 0556 9F93      		push r25
+ 1220 0558 8F93      		push r24
+ 1221 055a 0E94 0000 		call printf
+ 1222 055e 0FB6      		in __tmp_reg__,__SREG__
+ 1223 0560 F894      		cli
+ 1224 0562 DEBF      		out __SP_H__,r29
+ 1225 0564 0FBE      		out __SREG__,__tmp_reg__
+ 1226 0566 CDBF      		out __SP_L__,r28
+ 1227 0568 1BAA      		std Y+51,__zero_reg__
+ 1228               	.L24:
+ 1229               	.LBE3:
+ 421:main.c        ****             }
+ 422:main.c        ****         }
+ 423:main.c        ****         else
+ 424:main.c        ****         {
+ 425:main.c        ****             // error
+ 426:main.c        ****         }
+ 427:main.c        ****         
+ 428:main.c        ****         /*
+ 429:main.c        ****          * Only play MAX_NUM_MOLES times
+ 430:main.c        ****          */
+ 431:main.c        ****         if(num_moles >= MAX_NUM_MOLES)
+ 1231               	.LM110:
+ 1232 056a 8091 0000 		lds r24,num_moles
+ 1233 056e 8A30      		cpi r24,lo8(10)
+ 1234 0570 00F4      		brsh .+2
+ 1235 0572 00C0      		rjmp .L6
+ 432:main.c        ****         {
+ 433:main.c        ****             break;
+ 434:main.c        ****         }
+ 435:main.c        ****     }
+ 436:main.c        ****     
+ 437:main.c        ****     nrk_kprintf (PSTR ("The Game is Over.\r\n"));
+ 1237               	.LM111:
+ 1238 0574 80E0      		ldi r24,lo8(__c.3622)
+ 1239 0576 90E0      		ldi r25,hi8(__c.3622)
+ 1240 0578 0E94 0000 		call nrk_kprintf
+ 438:main.c        ****     nrk_led_set (BLUE_LED);
+ 1242               	.LM112:
+ 1243 057c 83E0      		ldi r24,lo8(3)
+ 1244 057e 90E0      		ldi r25,0
+ 1245 0580 0E94 0000 		call nrk_led_set
+ 439:main.c        ****     nrk_led_set (ORANGE_LED);
+ 1247               	.LM113:
+ 1248 0584 82E0      		ldi r24,lo8(2)
+ 1249 0586 90E0      		ldi r25,0
+ 1250 0588 0E94 0000 		call nrk_led_set
+ 440:main.c        ****     nrk_led_set (RED_LED);
+ 1252               	.LM114:
+ 1253 058c 80E0      		ldi r24,0
+ 1254 058e 90E0      		ldi r25,0
+ 1255 0590 0E94 0000 		call nrk_led_set
+ 441:main.c        ****     nrk_led_set (GREEN_LED);
+ 1257               	.LM115:
+ 1258 0594 81E0      		ldi r24,lo8(1)
+ 1259 0596 90E0      		ldi r25,0
+ 1260 0598 0E94 0000 		call nrk_led_set
+ 442:main.c        **** 
+ 443:main.c        ****     // Print out score achieved
+ 444:main.c        ****     printf("FINAL SCORE: %d\n", score); 
+ 1262               	.LM116:
+ 1263 059c 8091 0000 		lds r24,score+1
+ 1264 05a0 8F93      		push r24
+ 1265 05a2 8091 0000 		lds r24,score
+ 1266 05a6 8F93      		push r24
+ 1267 05a8 80E0      		ldi r24,lo8(.LC12)
+ 1268 05aa 90E0      		ldi r25,hi8(.LC12)
+ 1269 05ac 9F93      		push r25
+ 1270 05ae 8F93      		push r24
+ 1271 05b0 0E94 0000 		call printf
+ 1272 05b4 0F90      		pop __tmp_reg__
+ 1273 05b6 0F90      		pop __tmp_reg__
+ 1274 05b8 0F90      		pop __tmp_reg__
+ 1275 05ba 0F90      		pop __tmp_reg__
+ 1276               	.L30:
+ 445:main.c        **** 
+ 446:main.c        ****     // Game over
+ 447:main.c        ****     while(1);
+ 1278               	.LM117:
+ 1279 05bc 00C0      		rjmp .L30
+ 1300               	.Lscope1:
+ 1302               		.stabd	78,0,0
+ 1303               		.section	.rodata.str1.1
+ 1304               	.LC13:
+ 1305 00c0 4372 6561 		.string	"Create done\r\n"
+ 1305      7465 2064 
+ 1305      6F6E 650D 
+ 1305      0A00 
+ 1306               		.text
+ 1308               	.global	nrk_create_taskset
+ 1310               	nrk_create_taskset:
+ 1311               		.stabd	46,0,0
+ 448:main.c        **** }
+ 449:main.c        **** 
+ 450:main.c        **** void nrk_create_taskset ()
+ 451:main.c        **** {
+ 1313               	.LM118:
+ 1314               	.LFBB2:
+ 1315 05be CF93      		push r28
+ 1316 05c0 DF93      		push r29
+ 1317               	/* prologue: function */
+ 1318               	/* frame size = 0 */
+ 1319               	/* stack size = 2 */
+ 1320               	.L__stack_usage = 2
+ 452:main.c        ****     WHACKY_TASK.task = whacky_task;
+ 1322               	.LM119:
+ 1323 05c2 C0E0      		ldi r28,lo8(WHACKY_TASK)
+ 1324 05c4 D0E0      		ldi r29,hi8(WHACKY_TASK)
+ 1325 05c6 80E0      		ldi r24,lo8(gs(whacky_task))
+ 1326 05c8 90E0      		ldi r25,hi8(gs(whacky_task))
+ 1327 05ca 9E83      		std Y+6,r25
+ 1328 05cc 8D83      		std Y+5,r24
+ 453:main.c        ****     nrk_task_set_stk( &WHACKY_TASK, whacky_task_stack, NRK_APP_STACKSIZE);
+ 1330               	.LM120:
+ 1331 05ce 40E0      		ldi r20,0
+ 1332 05d0 51E0      		ldi r21,lo8(1)
+ 1333 05d2 60E0      		ldi r22,lo8(whacky_task_stack)
+ 1334 05d4 70E0      		ldi r23,hi8(whacky_task_stack)
+ 1335 05d6 CE01      		movw r24,r28
+ 1336 05d8 0E94 0000 		call nrk_task_set_stk
+ 454:main.c        ****     WHACKY_TASK.prio = 2;
+ 1338               	.LM121:
+ 1339 05dc 82E0      		ldi r24,lo8(2)
+ 1340 05de 8887      		std Y+8,r24
+ 455:main.c        ****     WHACKY_TASK.FirstActivation = TRUE;
+ 1342               	.LM122:
+ 1343 05e0 81E0      		ldi r24,lo8(1)
+ 1344 05e2 8F83      		std Y+7,r24
+ 456:main.c        ****     WHACKY_TASK.Type = BASIC_TASK;
+ 1346               	.LM123:
+ 1347 05e4 8987      		std Y+9,r24
+ 457:main.c        ****     WHACKY_TASK.SchType = PREEMPTIVE;
+ 1349               	.LM124:
+ 1350 05e6 8A87      		std Y+10,r24
+ 458:main.c        ****     WHACKY_TASK.period.secs = 1;
+ 1352               	.LM125:
+ 1353 05e8 81E0      		ldi r24,lo8(1)
+ 1354 05ea 90E0      		ldi r25,0
+ 1355 05ec A0E0      		ldi r26,0
+ 1356 05ee B0E0      		ldi r27,0
+ 1357 05f0 8B87      		std Y+11,r24
+ 1358 05f2 9C87      		std Y+12,r25
+ 1359 05f4 AD87      		std Y+13,r26
+ 1360 05f6 BE87      		std Y+14,r27
+ 459:main.c        ****     WHACKY_TASK.period.nano_secs = 0;
+ 1362               	.LM126:
+ 1363 05f8 1F86      		std Y+15,__zero_reg__
+ 1364 05fa 188A      		std Y+16,__zero_reg__
+ 1365 05fc 198A      		std Y+17,__zero_reg__
+ 1366 05fe 1A8A      		std Y+18,__zero_reg__
+ 460:main.c        ****     WHACKY_TASK.cpu_reserve.secs = 2;
+ 1368               	.LM127:
+ 1369 0600 82E0      		ldi r24,lo8(2)
+ 1370 0602 90E0      		ldi r25,0
+ 1371 0604 A0E0      		ldi r26,0
+ 1372 0606 B0E0      		ldi r27,0
+ 1373 0608 8B8B      		std Y+19,r24
+ 1374 060a 9C8B      		std Y+20,r25
+ 1375 060c AD8B      		std Y+21,r26
+ 1376 060e BE8B      		std Y+22,r27
+ 461:main.c        ****     WHACKY_TASK.cpu_reserve.nano_secs = 0;
+ 1378               	.LM128:
+ 1379 0610 1F8A      		std Y+23,__zero_reg__
+ 1380 0612 188E      		std Y+24,__zero_reg__
+ 1381 0614 198E      		std Y+25,__zero_reg__
+ 1382 0616 1A8E      		std Y+26,__zero_reg__
+ 462:main.c        ****     WHACKY_TASK.offset.secs = 0;
+ 1384               	.LM129:
+ 1385 0618 1B8E      		std Y+27,__zero_reg__
+ 1386 061a 1C8E      		std Y+28,__zero_reg__
+ 1387 061c 1D8E      		std Y+29,__zero_reg__
+ 1388 061e 1E8E      		std Y+30,__zero_reg__
+ 463:main.c        ****     WHACKY_TASK.offset.nano_secs = 0;
+ 1390               	.LM130:
+ 1391 0620 1F8E      		std Y+31,__zero_reg__
+ 1392 0622 18A2      		std Y+32,__zero_reg__
+ 1393 0624 19A2      		std Y+33,__zero_reg__
+ 1394 0626 1AA2      		std Y+34,__zero_reg__
+ 464:main.c        ****     nrk_activate_task (&WHACKY_TASK);
+ 1396               	.LM131:
+ 1397 0628 CE01      		movw r24,r28
+ 1398 062a 0E94 0000 		call nrk_activate_task
+ 465:main.c        ****     
+ 466:main.c        ****     nrk_kprintf ("Create done\r\n");
+ 1400               	.LM132:
+ 1401 062e 80E0      		ldi r24,lo8(.LC13)
+ 1402 0630 90E0      		ldi r25,hi8(.LC13)
+ 1403               	/* epilogue start */
+ 467:main.c        **** }...
+ 1405               	.LM133:
+ 1406 0632 DF91      		pop r29
+ 1407 0634 CF91      		pop r28
+ 466:main.c        ****     nrk_kprintf ("Create done\r\n");
+ 1409               	.LM134:
+ 1410 0636 0C94 0000 		jmp nrk_kprintf
+ 1412               	.Lscope2:
+ 1414               		.stabd	78,0,0
+ 1415               		.section	.text.startup,"ax",@progbits
+ 1417               	.global	main
+ 1419               	main:
+ 1420               		.stabd	46,0,0
+  92:main.c        **** {
+ 1422               	.LM135:
+ 1423               	.LFBB3:
+ 1424               	/* prologue: function */
+ 1425               	/* frame size = 0 */
+ 1426               	/* stack size = 0 */
+ 1427               	.L__stack_usage = 0
+  93:main.c        ****     nrk_setup_ports ();
+ 1429               	.LM136:
+ 1430 0000 0E94 0000 		call nrk_setup_ports
+  94:main.c        ****     nrk_setup_uart (UART_BAUDRATE_115K2);
+ 1432               	.LM137:
+ 1433 0004 80E1      		ldi r24,lo8(16)
+ 1434 0006 90E0      		ldi r25,0
+ 1435 0008 0E94 0000 		call nrk_setup_uart
+  96:main.c        ****     nrk_init ();
+ 1437               	.LM138:
+ 1438 000c 0E94 0000 		call nrk_init
+  98:main.c        ****     nrk_led_clr (0);
+ 1440               	.LM139:
+ 1441 0010 80E0      		ldi r24,0
+ 1442 0012 90E0      		ldi r25,0
+ 1443 0014 0E94 0000 		call nrk_led_clr
+  99:main.c        ****     nrk_led_clr (1);
+ 1445               	.LM140:
+ 1446 0018 81E0      		ldi r24,lo8(1)
+ 1447 001a 90E0      		ldi r25,0
+ 1448 001c 0E94 0000 		call nrk_led_clr
+ 100:main.c        ****     nrk_led_clr (2);
+ 1450               	.LM141:
+ 1451 0020 82E0      		ldi r24,lo8(2)
+ 1452 0022 90E0      		ldi r25,0
+ 1453 0024 0E94 0000 		call nrk_led_clr
+ 101:main.c        ****     nrk_led_clr (3);
+ 1455               	.LM142:
+ 1456 0028 83E0      		ldi r24,lo8(3)
+ 1457 002a 90E0      		ldi r25,0
+ 1458 002c 0E94 0000 		call nrk_led_clr
+ 103:main.c        ****     nrk_time_set (0, 0);
+ 1460               	.LM143:
+ 1461 0030 20E0      		ldi r18,0
+ 1462 0032 30E0      		ldi r19,0
+ 1463 0034 A901      		movw r20,r18
+ 1464 0036 60E0      		ldi r22,0
+ 1465 0038 70E0      		ldi r23,0
+ 1466 003a CB01      		movw r24,r22
+ 1467 003c 0E94 0000 		call nrk_time_set
+ 105:main.c        ****     bmac_task_config ();
+ 1469               	.LM144:
+ 1470 0040 0E94 0000 		call bmac_task_config
+ 107:main.c        ****     nrk_create_taskset ();
+ 1472               	.LM145:
+ 1473 0044 0E94 0000 		call nrk_create_taskset
+ 108:main.c        ****     nrk_start ();
+ 1475               	.LM146:
+ 1476 0048 0E94 0000 		call nrk_start
+ 111:main.c        **** }
+ 1478               	.LM147:
+ 1479 004c 80E0      		ldi r24,0
+ 1480 004e 90E0      		ldi r25,0
+ 1481 0050 0895      		ret
+ 1483               	.Lscope3:
+ 1485               		.stabd	78,0,0
+ 1486               		.section	.progmem.data,"a",@progbits
+ 1489               	__c.3622:
+ 1490 0000 5468 6520 		.string	"The Game is Over.\r\n"
+ 1490      4761 6D65 
+ 1490      2069 7320 
+ 1490      4F76 6572 
+ 1490      2E0D 0A00 
+ 1493               	__c.3615:
+ 1494 0014 2120 4D6F 		.string	"! Mole whacked !\r\n"
+ 1494      6C65 2077 
+ 1494      6861 636B 
+ 1494      6564 2021 
+ 1494      0D0A 00
+ 1497               	__c.3613:
+ 1498 0027 2120 4D6F 		.string	"! Mole timed out !\r\n"
+ 1498      6C65 2074 
+ 1498      696D 6564 
+ 1498      206F 7574 
+ 1498      2021 0D0A 
+ 1501               	__c.3607:
+ 1502 003c 2120 4D61 		.string	"! Max timeout count reached !\r\n"
+ 1502      7820 7469 
+ 1502      6D65 6F75 
+ 1502      7420 636F 
+ 1502      756E 7420 
+ 1505               	__c.3605:
+ 1506 005c 5278 2054 		.string	"Rx Timed Out!\r\n"
+ 1506      696D 6564 
+ 1506      204F 7574 
+ 1506      210D 0A00 
+ 1509               	__c.3598:
+ 1510 006c 2D3E 2057 		.string	"-> WHACKED Request.\r\n"
+ 1510      4841 434B 
+ 1510      4544 2052 
+ 1510      6571 7565 
+ 1510      7374 2E0D 
+ 1513               	__c.3596:
+ 1514 0082 436F 756C 		.string	"Could not Transmit!\r\n"
+ 1514      6420 6E6F 
+ 1514      7420 5472 
+ 1514      616E 736D 
+ 1514      6974 210D 
+ 1517               	__c.3594:
+ 1518 0098 2D3E 204D 		.string	"-> MOLE request\r\n"
+ 1518      4F4C 4520 
+ 1518      7265 7175 
+ 1518      6573 740D 
+ 1518      0A00 
+ 1521               	__c.3592:
+ 1522 00aa 436F 756C 		.string	"Could not Transmit!\r\n"
+ 1522      6420 6E6F 
+ 1522      7420 5472 
+ 1522      616E 736D 
+ 1522      6974 210D 
+ 1525               	__c.3590:
+ 1526 00c0 2D3E 2050 		.string	"-> POLL request\r\n"
+ 1526      4F4C 4C20 
+ 1526      7265 7175 
+ 1526      6573 740D 
+ 1526      0A00 
+ 1529               	__c.3588:
+ 1530 00d2 436F 756C 		.string	"Could not Transmit!\r\n"
+ 1530      6420 6E6F 
+ 1530      7420 5472 
+ 1530      616E 736D 
+ 1530      6974 210D 
+ 1533               	__c.3584:
+ 1534 00e8 5072 6573 		.string	"Press 's' to start\r\n"
+ 1534      7320 2773 
+ 1534      2720 746F 
+ 1534      2073 7461 
+ 1534      7274 0D0A 
+ 1535               		.comm	dead_devices,2,1
+ 1536               	.global	state
+ 1537               		.section .bss
+ 1540               	state:
+ 1541 0000 00        		.zero	1
+ 1542               	.global	score
+ 1545               	score:
+ 1546 0001 0000      		.zero	2
+ 1547               		.comm	previous_slave_id,2,1
+ 1548               		.comm	tx_buf,116,1
+ 1549               		.comm	rx_buf,116,1
+ 1550               	.global	num_moles
+ 1553               	num_moles:
+ 1554 0003 00        		.zero	1
+ 1555               		.comm	buffer,20,1
+ 1556               		.comm	whacky_buf,116,1
+ 1557               		.comm	whacky_task_stack,256,1
+ 1558               		.comm	WHACKY_TASK,35,1
+ 1559               		.comm	error_num,1,1
+ 1560               		.comm	error_task,1,1
+ 1561               		.comm	bmac_rfTxInfo,7,1
+ 1562               		.comm	bmac_rfRxInfo,12,1
+ 1563               		.comm	bmac_enable_signal,1,1
+ 1564               		.comm	bmac_tx_pkt_done_signal,1,1
+ 1565               		.comm	bmac_rx_pkt_signal,1,1
+ 1566               		.comm	nrk_kernel_stk_ptr,2,1
+ 1567               		.comm	nrk_idle_task_stk,128,1
+ 1568               		.comm	_nrk_signal_list,4,1
+ 1590               		.text
+ 1592               	.Letext0:
+ 1593               		.ident	"GCC: (GNU) 4.9.1"
+ 1594               	.global __do_copy_data
+ 1595               	.global __do_clear_bss
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 main.c
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:2      *ABS*:000000000000003e __SP_H__
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:3      *ABS*:000000000000003d __SP_L__
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:4      *ABS*:000000000000003f __SREG__
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:5      *ABS*:000000000000003b __RAMPZ__
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:6      *ABS*:0000000000000000 __tmp_reg__
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:7      *ABS*:0000000000000001 __zero_reg__
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:366    .text:0000000000000000 whacky_task
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1533   .progmem.data:00000000000000e8 __c.3584
+                            *COM*:0000000000000074 rx_buf
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1505   .progmem.data:000000000000005c __c.3605
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1501   .progmem.data:000000000000003c __c.3607
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1540   .bss:0000000000000000 state
+                            *COM*:0000000000000002 dead_devices
+                            *COM*:0000000000000002 previous_slave_id
+                            *COM*:0000000000000074 tx_buf
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1529   .progmem.data:00000000000000d2 __c.3588
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1525   .progmem.data:00000000000000c0 __c.3590
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1521   .progmem.data:00000000000000aa __c.3592
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1517   .progmem.data:0000000000000098 __c.3594
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1513   .progmem.data:0000000000000082 __c.3596
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1509   .progmem.data:000000000000006c __c.3598
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1497   .progmem.data:0000000000000027 __c.3613
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1493   .progmem.data:0000000000000014 __c.3615
+                            *COM*:0000000000000014 buffer
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1553   .bss:0000000000000003 num_moles
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1545   .bss:0000000000000001 score
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1489   .progmem.data:0000000000000000 __c.3622
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1310   .text:00000000000005be nrk_create_taskset
+                            *COM*:0000000000000023 WHACKY_TASK
+                            *COM*:0000000000000100 whacky_task_stack
+/var/folders/2r/fhlmg4k17dz6pyvtpt5tk5z40000gn/T//ccn0K1LX.s:1419   .text.startup:0000000000000000 main
+                            *COM*:0000000000000074 whacky_buf
+                            *COM*:0000000000000001 error_num
+                            *COM*:0000000000000001 error_task
+                            *COM*:0000000000000007 bmac_rfTxInfo
+                            *COM*:000000000000000c bmac_rfRxInfo
+                            *COM*:0000000000000001 bmac_enable_signal
+                            *COM*:0000000000000001 bmac_tx_pkt_done_signal
+                            *COM*:0000000000000001 bmac_rx_pkt_signal
+                            *COM*:0000000000000002 nrk_kernel_stk_ptr
+                            *COM*:0000000000000080 nrk_idle_task_stk
+                            *COM*:0000000000000004 _nrk_signal_list
+
+UNDEFINED SYMBOLS
+time
+srand
+nrk_kprintf
+nrk_uart_rx_signal_get
+nrk_signal_register
+nrk_uart_data_ready
+__iob
+fgetc
+bmac_init
+bmac_set_rf_power
+bmac_rx_pkt_set_buffer
+rand
+__divmodhi4
+nrk_event_wait
+nrk_time_get
+printf
+__muluhisi3
+__udivmodsi4
+sprintf
+nrk_led_set
+bmac_tx_pkt
+nrk_led_clr
+bmac_rx_pkt_ready
+bmac_rx_pkt_get
+bmac_rx_pkt_release
+strtok
+atoi
+strcmp
+nrk_task_set_stk
+nrk_activate_task
+nrk_setup_ports
+nrk_setup_uart
+nrk_init
+nrk_time_set
+bmac_task_config
+nrk_start
+__do_copy_data
+__do_clear_bss
