@@ -1,0 +1,40 @@
+.body{
+    background-color: deepskyblue;
+    background: -webkit-linear-gradient(top,deepskyblue, lightseagreen);
+}
+
+.logo{
+    width:150px;
+    height:50px;
+}
+
+.Time{
+ width:100px;
+ text-align:center;
+}
+
+.sensor_input{
+    align-self: center;
+    align-content: center;
+    width:85px;
+}
+
+#InitData{
+    margin-left:50px;
+    margin-right:30px;
+}
+
+/*#uploadFile{*/
+    /*margin-top:50px;*/
+    /*margin-left:50px;*/
+/*}*/
+
+/*#select-file{*/
+    /*margin-top:20px;*/
+    /*margin-left:50px;*/
+/*}*/
+
+/*#submit{*/
+    /*margin-top:20px;*/
+    /*margin-left:50px;*/
+/*}*/

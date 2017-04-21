@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--==============================header=================================-->
+<head>
+    <meta charset="UTF-8">
+    <title>iotEasy</title>
+
+    <!--======================== css files =============================-->
+    <link rel="stylesheet" type="text/css" href="/static/css/iotEasy.css">
+    <link rel="stylesheet" type="text/css" href="/static/css/bootstrap.css">
+    <link rel="stylesheet" type="text/css" href="/static/css/bootstrap-select.css">
+    <!--======================== javascript files ======================-->
+    <script src="/static/javascripts/jquery-1.11.3.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+    <script src="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js"></script>
+    <script src="/static/javascripts/arbor-tween.js"></script>
+    <script src="/static/javascripts/arbor.js"></script>
+    <script src="/static/javascripts/renderer.js"></script>
+    <script src="/static/javascripts/graphics.js"></script>
+    <script src="/static/javascripts/bootstrap-select.js"></script>
+    <script src="/static/javascripts/plus_minus.js"></script>
+    <script src="/static/iotEasy.js"></script>
+
+</head>
+<!--============================= Body =================================-->
+<body class="body">
+
+<!--=============================Nav Bar=================================-->
+<div>
+    <div class="ul">
+        <div class="log">
+            <img src="/static/Pictures/logo.jpg" alt="Logo">
+        </div>
+        <ul>
+            <li class="li"><a href = "">Product Introduction</a></li>
+            <li class="li"><a href = "">Instruction</a></li>
+            <li class="li"><a href = "">18748 Team 12</a></li>
+        </ul>
+    </div>
+</div>
+<!--=============================User Interface===========================-->
+<div>
+    <div class="GUI">
+        <div class="connect_container">
+            <div class="container">
+                <ul class="screen_container">
+                    <li class="screen" id="entryway" style="left:-100px; display:block; visibility:visible;">
+                        <h2>
+                            <span class="screen-reader-only">entryway</span>
+                        </h2>
+                        <ul id = "scene1" class="scene" style="transform:translate3d(0px,0px,0px); transform-style:preserve-3d;//
+                        backface-visibility:hidden; position:relative">
+                            <li class="layerC expand-width layerBack" data-depth="0.2"
+                            style = "transform: translate3d(-3px,0px,0px);transform-style:
+                            preserve-3d;backface-visibility:hidden;position:relative;
+                            display:block;left:0;top:0;">
+                                <div class="layer1">
+                                    <div class="relatives">
+                                        <img alt="" aria-hidden="true" class="layerbackground"
+                                             src="/static/Pictures/layer14.jpg">
+                                        {# define hover in class#}
+                                        <a href="/node_5/">
+                                            <span aria-hidden="true" class='node_5' style="visibility:visible;">
+                                                <p class="nodestyle">Node5</p>
+                                                <img alt src="/static/Pictures/blurb.png">
+                                            </span>
+                                        </a>
+                                        <a href="/node_6/">
+                                            <span aria-hidden="true" class="node_6" style="visibility:visible;">
+                                                <img alt src="/static/Pictures/blurb.png">
+                                                <p class="nodestyle">Node6</p>
+                                            </span>
+                                        </a>
+                                        <a href="/node_7/">
+                                            <span aria-hidden="true" class="node_7" style="visibility:visible;">
+                                                <img alt src="/static/Pictures/blurb.png">
+                                                <p class="nodestyle">Node7</p>
+                                            </span>
+                                        </a>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+{#                        <ul class="hotspotlist" style="display: block; visibility: visible;">#}
+{#                            <li>#}
+{#                                <div data-targetripple="node_5" class="focus_area_node_5">#}
+{#                                    <a href="/node_5/" data-hrefs="info_node_5" class="hotspots">#}
+{#                                        <span class="screen-reader-only">Node5 </span>#}
+{#                                    </a>#}
+{#                                </div>#}
+{#                                <div class="info info_node_5 left state_hidden">#}
+{#                                    <h3 class="screen-reader-only">Node5</h3>#}
+{#                                    <img alt="" src="" aria-hidden="true">#}
+{#                                </div>#}
+{#                            </li>#}
+{#                            <li>#}
+{#                                <div data-targetripple="node_6" class="focus_area_node_6">#}
+{#                                    <a href="/node_6/" data-hrefs="info_node_6" class="hotspots">#}
+{#                                        <span class="screen-reader-only">Node6</span>#}
+{#                                    </a>#}
+{#                                </div>#}
+{#                                <div class="info info_node_6 left state_hidden">#}
+{#                                    <h3 class="screen-reader-only">Node6</h3>#}
+{#                                    <img alt="" src="" aria-hidden="true">#}
+{#                                </div>#}
+{#                            </li>#}
+{#                            <li>#}
+{#                                <div data-targetripple="node_7" class="focus_area_node_7">#}
+{#                                    <a href="node_7" data-hrefs="info_node_7" class="hotspots lastspot">#}
+{#                                        <span class="screen-reader-only">Node7</span>#}
+{#                                    </a>#}
+{#                                </div>#}
+{#                                <div class="info info_node_7 left state_hidden">#}
+{#                                    <h3 class="screen-reader-only">Node7</h3>#}
+{#                                    <img alt="" src="" aria-hidden="true">#}
+{#                                </div>#}
+{#                            </li>#}
+{#                        </ul>#}
+                    </li>
+                    <li class="screen" id="living" style="left: 1200px; display:block; visibility: visible;" aria-hidden="false">
+                        <ul class="scene" id="scene1" style="transform: translate3d(0px, 0px, 0px);transform-style: preserve-3d;
+                        backface-visibility: hidden; position:relative;">
+                            <li class="layerC expand-width layerBack" data-depth="0.20" style="transform:
+                            translate3d(3px, 0px, 0px); transform-style: preserve-3d; backface-visibility: hidden;
+                            position: relative; display: block; left: 0px; top: 0px;">
+                                <div class="layer1">
+                                    <div class="relatives">
+                                        <img alt="" aria-hidden="true" class="layerbackground" src="/static/Pictures/layer13.jpg">
+                                        {#from here to revise codes #}
+                                        <a href="/node_1/">
+                                            <span aria-hidden="true" class="node_1" style="visibility: visible;">
+                                                <img src="/static/Pictures/blurb.png">
+                                                <p class="nodestyle">Node1</p>
+                                            </span>
+                                        </a>
+                                        <a href="/node_3/">
+                                            <span aria-hidden="true" class="node_3" style="visibility: visible;">
+                                                <img src="/static/Pictures/blurb.png">
+                                                <p class="nodestyle">Node3</p>
+                                            </span>
+                                        </a>
+                                        <a href="/node_4/">
+                                            <span aria-hidden="true" class="node_4" style="visibility: visible;">
+                                                <img src="/static/Pictures/blurb.png">
+                                                <p class="nodestyle">Node4</p>
+                                            </span>
+                                        </a>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+{#                        <ul class="hotspotList" style="display: none; visibility: hidden;">#}
+{#                            <li>#}
+{#                                <div data-targetripple="nodes_1" class="focus_area_node_1">#}
+{#                                    <a href="/static/Pictures/blurb.png" data-hrefs="info_node_1" class="hotspots">#}
+{#                                        <span class="screen-reader-only">open popup for smart tv</span>#}
+{#                                    </a>#}
+{#                                </div>#}
+{#                                <div class="info info_node_1 state_hidden">#}
+{#                                    <h3 class="screen-reader-only">smart TV</h3>#}
+{#                                    <img alt="" src="" aria-hidden="true">#}
+{#                                </div>#}
+{#                            </li>#}
+{#                            <li>#}
+{#                                <div data-targetripple="node_3" class="focus_area_node_3">#}
+{#                                    <a href="/static/Pictures/blurb.png" class="hotspots">#}
+{#                                        <span class="screen-reader-only">open popup for smart air control</span>#}
+{#                                    </a>#}
+{#                                </div>#}
+{#                                <div class="info info_node_3 state_hidden bottom">#}
+{#                                    <h3 class="screen-reader-only">smart air control</h3>#}
+{#                                    <img alt="" src="" aria-hidden="true">#}
+{#                                </div>#}
+{#                            </li>#}
+{#                            <li>#}
+{#                                <div data-targetripple="node_4" class="focus_area focus_area4">#}
+{#                                    <a href="/static/Pictures/blurb.png" data-hrefs="info4" class="hotspots lastspot">#}
+{#                                        <span class="screen-reader-only">open popup for smart thermostat</span>#}
+{#                                    </a>#}
+{#                                </div>#}
+{#                                <div class="info info_node_4 state_hidden">#}
+{#                                    <h3 class="screen-reader-only">smart thermostat</h3>#}
+{#                                    <img alt="" src="" aria-hidden="true">#}
+{#                                </div>#}
+{#                            </li>#}
+{#                        </ul>#}
+                    </li>
+                    <li class="screen" id="kitchen" style="left: 1200px; visibility: hidden;" aria-hidden="true">
+                        <ul id="scene3" class="scene" style="transform: translate3d(0px, 0px, 0px); transform-style:
+                        preserve-3d; backface-visibility: hidden; position: relative;">
+                            <li class="layerC expand-width layerBack" data-depth="0.20" style="transform:
+                            translate3d(3px, 0px, 0px); transform-style: preserve-3d; backface-visibility: hidden;
+                            position: relative; display: block; left: 0px; top: 0px;">
+                                <div class="layer1">
+                                    <div class="realtives">
+                                        <img alt="" aria-hidden="true" class="layerbackground" src="/static/Pictures/layer12.jpg">
+                                        <a href="/node_8/">
+                                            <span aria-hidden="true" class="node_8">
+                                                <img src="/static/Pictures/blurb.png">
+                                                <p class="nodestyle">Node8</p>
+                                            </span>
+                                        </a>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+{#                        <ul class="hotspotList" style="display: none; visibility: hidden;">#}
+{#                            <li>#}
+{#                                <div data-targetripple="node_8" class="focus_area focus_area8">#}
+{#                                    <a href="info8#?lnk=L1L2_SmHm_112415_HERO|HERO|T:Template B-DVM|C:CMS&amp;intc=3054058|null" data-hrefs="info8" class="hotspots">#}
+{#                                        <span class="screen-reader-only">open popup for smart outlets</span>#}
+{#                                    </a></div> <div class="info info8 state_hidden">#}
+{#                                    <h3 class="screen-reader-only">smart outlets</h3>#}
+{#                                    <img alt="" src="/static/Pictures/blurb.png" aria-hidden="true">#}
+{#                                    <a href="##?lnk=L1L2_SmHm_112415_HERO|HERO|T:Template B-DVM|C:CMS&amp;intc=3054058|null" class="closeTooltip" data-targetripple="node_8">#}
+{#                                    <span class="screen-reader-only">close popup</span></a>#}
+{#                                </div>#}
+{#                            </li>#}
+{#                            <li>#}
+{#                                <div data-targetripple="node_9" class="focus_area focus_area9">#}
+{#                                    <a href="info9#?lnk=L1L2_SmHm_112415_HERO|HERO|T:Template B-DVM|C:CMS&amp;intc=3054058|null" data-hrefs="info9" class="hotspots lastspot">#}
+{#                                        <span class="screen-reader-only">open popup for smart appliances</span>#}
+{#                                    </a>#}
+{#                                </div>#}
+{#                                <div class="info info9 state_hidden">#}
+{#                                    <h3 class="screen-reader-only">smart appliances</h3>#}
+{##}
+{#                                </div>#}
+{#                            </li>#}
+{#                        </ul>#}
+                    </li>
+                    <li class="screen" id="laundry" style="left: 1200px; visibility: visible; display: block; -webkit-filter: blur(0px);">
+                        <ul id="scene4" class="scene" style="transform: translate3d(0px, 0px, 0px); transform-style:
+                        preserve-3d; backface-visibility: hidden; position: relative;">
+                            <li class="layerC expand-width layerBack" data-depth="0.20" style="transform:
+                            translate3d(3px, 0px, 0px); transform-style: preserve-3d; backface-visibility: hidden;
+                            position: relative; display: block; left: 0px; top: 0px;">
+                                <div class="layer1" style="display: block; visibility: visible;">
+                                    <div class="realtives">
+                                        <img a="" alt="" aria-hidden="true" class="layerbackground" src="/static/Pictures/layer11.jpg">
+                                        <a href="/node_2/">
+                                            <span aria-hidden="true" class="node_2" style="visibility: visible;">
+                                                <img src="/static/Pictures/blurb.png">
+                                                <p class="nodestyle">Node2</p>
+                                            </span>
+                                        </a>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+{#                        <ul class="hotspotList" style="display: block; visibility: visible;">#}
+{#                            <li>#}
+{#                                <div data-targetripple="points10" class="focus_area focus_area10">#}
+{#                                    <a href="info10#?lnk=L1L2_SmHm_112415_HERO|HERO|T:Template B-DVM|C:CMS&amp;intc=3054058|null" data-hrefs="info10" class="hotspots">#}
+{#                                        <span class="screen-reader-only">open popup for smart baby monitors</span>#}
+{#                                    </a>#}
+{#                                </div>#}
+{#                                <div class="info info10 state_hidden">#}
+{#                                    <h3 class="screen-reader-only">smart baby monitors</h3>#}
+{#                                     <img alt="" src="//static.targetimg1.com/DVM/2015/Nov/brand/SmartHome_Hero_OC/images/tcins/s2_14086054.png" aria-hidden="true">#}
+{#                                    <a href="/c/baby-monitors-smart-home-improvement/-/N-54u1r#?lnk=L1L2_SmHm_112415_HERO|HERO|T:Template B-DVM|C:CMS&amp;intc=3054058|null" class="shopall">#}
+{#                                        <span class="line_break">shop all</span>#}
+{#                                        smart baby monitors#}
+{#                                    </a>#}
+{#                                    <a href="##?lnk=L1L2_SmHm_112415_HERO|HERO|T:Template B-DVM|C:CMS&amp;intc=3054058|null" class="closeTooltip" data-targetripple="points10">#}
+{#                                        <span class="screen-reader-only">close popup</span>#}
+{#                                    </a>#}
+{#                                </div>#}
+{#                            </li>#}
+{#                            <li>#}
+{#                                <div data-targetripple="points11" class="focus_area focus_area11">#}
+{#                                    <a href="info11#?lnk=L1L2_SmHm_112415_HERO|HERO|T:Template B-DVM|C:CMS&amp;intc=3054058|null" data-hrefs="info11" class="hotspots lastspot">#}
+{#                                        <span class="screen-reader-only">open popup for smart lighting</span>#}
+{#                                    </a>#}
+{#                                </div>#}
+{#                                <div class="info info11 state_hidden">#}
+{#                                    <h3 class="screen-reader-only">smart lighting</h3>#}
+{#                                    <img alt="" src="//static.targetimg1.com/DVM/2015/Nov/brand/SmartHome_Hero_OC/images/tcins/s2_16386080.png" aria-hidden="true">#}
+{#                                    <a href="/c/lighting-switches-smart-home-improvement/-/N-54u2j#?lnk=L1L2_SmHm_112415_HERO|HERO|T:Template B-DVM|C:CMS&amp;intc=3054058|null" class="shopall">#}
+{#                                        <span class="line_break">shop all</span> smart lighting</a>#}
+{#                                    <a href="##?lnk=L1L2_SmHm_112415_HERO|HERO|T:Template B-DVM|C:CMS&amp;intc=3054058|null" class="closeTooltip" data-targetripple="points11">#}
+{#                                        <span class="screen-reader-only">close popup</span>#}
+{#                                    </a>#}
+{#                                </div>#}
+{#                            </li>#}
+{#                        </ul>#}
+                    </li>
+                </ul>
+            </div>
+            <div class="tabsection">
+                <ul class="tab_list_group">
+                    <li class="entryway" data-index="0">
+                        <span>entryway</span>
+                    </li>
+                    <li class="living" data-index="1">
+                        <a href="#">living room</a>
+                    </li>
+                    <li class="kitchen" data-index="2">
+                        <a href="#">kitchen</a>
+                    </li>
+                    <li class="laundry" data-index="3">
+                        <a href="#">laundry</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+<!--============================== Upload File =========================-->
+    <div id="uploadFile">
+        <p>
+            New Data: <input type="file" id="selectfile">
+            <input type="button" id="submit" value="Upload" class="btn">
+            <input type="button" id="transmit" value="Transmit" class="btn">
+        </p>
+        <div class="progress-bar">
+            <div id="progress" class="progress"></div>
+        </div>
+    </div>
+</div>
+<!--============================= Welcome =================================-->
+<div id="welcome" style="margin-bottom:10%">
+    <p class="welcome">Welcome<p>
+</div>
+<!-============================== Data From Sensor ========================-->
+<div style="margin-bottom:8%">
+    <p class="block">Sensor Data</p>
+</div>
+<div class="sensorData">
+    <table class="table.change">
+      <tr style="margin-bottom:10%">
+        <label style="margin-left:38%;margin-bottom:2%;font-size:20px;font-weight:200;">Value:</label>
+        <input id = 'sensorVal' type="text" class="form-control" style="text-align:center;
+                margin-bottom:10%;margin-left:38%;width:20%"/>
+      </tr>
+      <tr style="margin-bottom:10%;">
+        <label style="margin-left:7%;margin-bottom:2%;font-size:20px;font-weight:200;">NodeID</label>
+        <label style="margin-left:25%;margin-bottom:2%;font-size:20px;font-weight:200">Time</label>
+        <label style="margin-left:27%;margin-bottom:2%;font-size:20px;font-weight:200">Sensor Type</label>
+      </tr>
+      <tr>
+        <td>
+          <select class="selectpicker NodeID" id="NodeID">
+                <option>Node1</option>
+                <option>Node2</option>
+                <option>Node3</option>
+                <option>Node4</option>
+                <option>Node5</option>
+                <option>Node6</option>
+                <option>Node7</option>
+                <option>Node8</option>
+          </select>
+        </td>
+        <td>
+          <select class = "selectpicker Time" id="Time">
+
+          </select>
+        </td>
+        <td>
+          <select class="selectpicker sensor_input" id="Sensor-input">
+                <option>Battery</option>
+                <option>Accelerometer</option>
+                <option>Pressure Sensor</option>
+                <option>Light Sensor</option>
+                <option>Sound Sensor</option>
+                <option>Motion Sensor</option>
+                <option>Humidity Sensor</option>
+                <option>Thermometer</option>
+          </select>
+        </td>
+      </tr>
+  </table>
+</div>
+<!-=============================== Select Data Threshod ===================-->
+<div style="margin-bottom:10%">
+    <p class="block">Set Sensor Threshod</p>
+</div>
+{# going to set the senosr threshod class#}
+<div class='sensorThreshod'>
+    <table class="table.change">
+        <tr>
+            <label style="margin-left:7%;margin-bottom:2%;font-size:20px;font-weight:200;">
+                Sensor Type
+            </label>
+            <label style="margin-left:22%;margin-bottom:2%;font-size:20px;font-weight:200;">
+                Threshod Value:
+            </label>
+        </tr>
+        <tr>
+            <td>
+               <select class="selectpicker sensor_input" id="Sensor-input-threshod-sensortype">
+                    <option>Battery</option>
+                    <option>Accelerometer</option>
+                    <option>Pressure Sensor</option>
+                    <option>Light Sensor</option>
+                    <option>Sound Sensor</option>
+                    <option>Motion Sensor</option>
+                    <option>Humidity Sensor</option>
+                    <option>Thermometer</option>
+               </select>
+            </td>
+            <td>
+                <div class="input-group" style="margin-top:-8%;">
+                    <span class="input-group-btn">
+                        <button type="button" class="btn btn-default btn-number"  data-type="minus" data-field="quant[1]">
+                            <span class="glyphicon glyphicon-minus"></span>
+                        </button>
+                    </span>
+                    <input type="text" name="quant[1]" class="form-control input-number" value="1" min="1"
+                           id="Sensor-input-threshod-value">
+                    <span class="input-group-btn">
+                        <button type="button" class="btn btn-default btn-number" data-type="plus" data-field="quant[1]">
+                            <span class="glyphicon glyphicon-plus"></span>
+                        </button>
+                    </span>
+                </div>
+            </td>
+            <td>
+                <div style="margin-left:100%;margin-top:-35%;">
+                    <button class="btn" id="setThreshod">Set</button>
+                </div>
+            </td>
+        </tr>
+    </table>
+</div>
+<!--============================= Nodes Topology ==========================-->
+<div>
+    <p class="block">Nodes Topology</p>
+</div>
+<div class="nodesTopology">
+    <canvas id="viewport" width="800" height="400"></canvas>
+</div>
+<!--=============================Hardware ===============================-->
+<div>
+    <p class="block">Hardware</p>
+</div>
+<div class="hardWare">
+</div>
+<!--=============================Footer =================================-->
+</body>
+</html>

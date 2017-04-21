@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--==============================header=================================-->
+<head>
+    <meta charset="UTF-8">
+    <title>Node2</title>
+
+    <script src="/static/javascripts/jquery-1.11.3.min.js"></script>
+    <script src="/static/javascripts/canvasjs.min.js"></script>
+    <script src="/static/node.js"></script>
+
+    <link rel="stylesheet" type="text/css" href="/static/css/node.css">
+    <link rel="stylesheet" type="text/css" href="/static/css/bootstrap.css">
+</head>
+<!--==============================Boady=================================-->
+<body class="body">
+<!--==============================Selector==============================-->
+
+
+<!--==============================Panel\Table\Selector==================-->
+<div class="panel panel-default">
+  <!-- Default panel contents -->
+  <div class="panel-heading" id = "NodeID">Node2</div>
+  <!-- Table -->
+  <table class="table">
+      <tr>
+        <td class="Time">Time</td>
+        <td>Accelerometer</td>
+        <td>Pressure Sensor</td>
+        <td>Light Sensor</td>
+        <td>Sound Sensor</td>
+        <td>Motion Sensor</td>
+        <td>Humidity Sensor</td>
+        <td>Thermometer</td>
+      </tr>
+      <tr>
+        <td><select class = "Time" id="Time"></select></td>
+        <td><input class="sensor_input" id="Accelerometer"></td>
+        <td><input class="sensor_input" id="Pressure"></td>
+        <td><input class="sensor_input" id="Light"></td>
+        <td><input class="sensor_input" id="Sound"></td>
+        <td><input class="sensor_input" id="Motion"></td>
+        <td><input class="sensor_input" id="Humidity"></td>
+        <td><input class="sensor_input" id="Thermometer"></td>
+      </tr>
+  </table>
+</div>
+<!--============================== Buttons =============================-->
+<div>
+    <button class="btn" id="InitData">Init Data</button>
+    <button class="btn" id="addDataInfoToList">Add Data to List</button>
+</div>
+<!--============================== Graph ===============================-->
+<div id="chartContainer" style="margin:20%;margin-top:10%;height: 300px; width:60%;"></div>
+</body>
+</html>
